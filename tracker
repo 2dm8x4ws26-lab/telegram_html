@@ -1,0 +1,3612 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Рабочий трекер отдела — Учёт задач и времени</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS для импорта и экспорта .xlsx -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- Шрифт Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #f4f6f9;
+      color: #0f172a;
+      font-family: 'Inter', system-ui, '-apple-system', sans-serif;
+    }
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 6px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    .combobox-list {
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    @keyframes pulseSoft {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .animate-pulse-soft {
+      animation: pulseSoft 1.4s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased">
+
+  <!-- ==================== ВЕРХНЯЯ ПАНЕЛЬ (STICKY HEADER) ==================== -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-2.5">
+      <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2.5">
+        <!-- Левая часть: логотип + сотрудник -->
+        <div class="flex flex-wrap items-center justify-between xl:justify-start gap-2.5">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shrink-0">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+            </div>
+            <div>
+              <h1 class="text-base font-bold text-slate-900 leading-tight">Рабочий трекер</h1>
+              <p class="text-[11px] text-slate-500 hidden sm:block">Учёт задач и рабочего времени</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+            <span class="text-xs font-medium text-slate-500">Сотрудник:</span>
+            <select id="globalEmployeeSelect" class="bg-transparent text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none cursor-pointer pr-1"></select>
+          </div>
+        </div>
+
+        <!-- Центр: прогресс-бар рабочего дня (8 часов) -->
+        <div class="flex-1 min-w-[230px] max-w-sm w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+          <div class="flex items-center justify-between gap-2 text-[11px] mb-1">
+            <span id="dailyProgressLabel" class="font-medium text-slate-700 whitespace-nowrap">За сегодня: 0 ч 00 мин / 8 ч</span>
+            <span id="dailyProgressPct" class="font-bold text-amber-600 shrink-0">0%</span>
+          </div>
+          <div class="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+            <div id="dailyProgressBar" class="h-full bg-amber-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Правая часть: Отменить, Проверить, Excel, JSON Бэкап -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <!-- Отменить (Ctrl+Z) -->
+          <button id="btnUndo" type="button" disabled title="Отменить последнее действие (Ctrl+Z)"
+            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 text-xs font-medium transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a5 5 0 015 5v2M3 10l4-4m-4 4l4 4" />
+            </svg>
+            <span class="hidden sm:inline">Отменить</span>
+            <span id="undoCountBadge" class="hidden text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600 font-semibold">0</span>
+          </button>
+
+          <!-- Аудит / Проверить -->
+          <button id="btnOpenAudit" type="button" title="Проверить трекер перед выгрузкой"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition">
+            <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Проверить</span>
+            <span id="auditCountBadge" class="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">0</span>
+          </button>
+
+          <!-- Меню JSON Бэкап -->
+          <div class="relative" id="backupMenuWrapper">
+            <button id="btnBackupMenu" type="button"
+              class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition">
+              <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+              <span>Бэкап JSON</span>
+            </button>
+            <div id="backupDropdown" class="hidden absolute right-0 mt-1.5 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-40">
+              <button id="btnSaveJson" type="button" class="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                <span>💾</span> Скачать копию (.json)
+              </button>
+              <button id="btnLoadJson" type="button" class="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                <span>📂</span> Восстановить из JSON
+              </button>
+            </div>
+            <input type="file" id="jsonFileInput" accept=".json" class="hidden" />
+          </div>
+
+          <!-- Загрузить Excel -->
+          <input type="file" id="excelFileInput" accept=".xlsx,.xls" class="hidden" />
+          <button id="btnImportExcel" type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition shadow-xs">
+            <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Загрузить Excel</span>
+          </button>
+
+          <!-- Выгрузить Excel -->
+          <button id="btnOpenExportModal" type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold transition shadow-xs">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>Выгрузить Excel</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Вкладки навигации + бейдж базы справочников -->
+      <div class="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+        <nav class="flex flex-wrap items-center gap-1.5" role="tablist">
+          <button id="tabBtnTasks" type="button" role="tab" aria-selected="true"
+            class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-blue-600 text-white shadow-xs transition">
+            Ввод и задачи
+          </button>
+          <button id="tabBtnSummary" type="button" role="tab" aria-selected="false"
+            class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-100 transition">
+            Сводка руководителя
+          </button>
+          <button id="tabBtnDictionaries" type="button" role="tab" aria-selected="false"
+            class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-100 transition">
+            Справочники
+          </button>
+        </nav>
+
+        <div class="flex items-center gap-2 text-xs text-slate-500">
+          <button id="dictStatusBadge" type="button" title="Открыть управление справочниками"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 font-medium text-[11px] transition cursor-pointer">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            База: 6 поставщиков, 8 клиентов
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== ОСНОВНОЙ КОНТЕНТ ==================== -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 space-y-4">
+
+    <!-- ========== ВКЛАДКА 1: ВВОД И ЗАДАЧИ ========== -->
+    <section id="viewTasks" class="space-y-4">
+
+      <!-- 1. Мини-календарь недели с индикатором часов -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Календарь недели</span>
+            <span id="weekRangeTitle" class="text-xs font-semibold text-slate-700"></span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button id="btnWeekPrev" type="button" class="px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs text-slate-600 transition" title="Предыдущая неделя">◀</button>
+            <button id="btnWeekCurrent" type="button" class="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-700 transition">Текущая</button>
+            <button id="btnWeekNext" type="button" class="px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs text-slate-600 transition" title="Следующая неделя">▶</button>
+          </div>
+        </div>
+        <div id="weekCalendarStrip" class="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-7 gap-2"></div>
+      </div>
+
+      <!-- 2. Быстрые шаблоны + кнопка Пакетный мониторинг -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-3.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Быстрые шаблоны</span>
+          <button id="btnOpenBatchModal" type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition">
+            <span>⚡</span> Пакетный мониторинг закупок
+          </button>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" data-preset="monitoring" class="preset-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-medium transition">
+            <span>🔍</span> Мониторинг закупок
+          </button>
+          <button type="button" data-preset="supplier_request" class="preset-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-medium transition">
+            <span>✉️</span> Запрос поставщику
+          </button>
+          <button type="button" data-preset="prices_erp" class="preset-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-medium transition">
+            <span>💾</span> Обновление цен в базе
+          </button>
+          <button type="button" data-preset="sales_reply" class="preset-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-medium transition">
+            <span>💬</span> Ответ отделу продаж
+          </button>
+          <button type="button" data-preset="analytics" class="preset-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-medium transition">
+            <span>📊</span> Аналитика / Отчёты
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. Форма добавления / редактирования задачи -->
+      <div id="taskFormCard" class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5 transition-all">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3.5 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <h2 id="formTitle" class="text-base font-bold text-slate-900">Новая запись</h2>
+            <span id="editingBadge" class="hidden px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Редактирование</span>
+          </div>
+          <button id="btnResetForm" type="button" class="text-xs font-medium text-slate-500 hover:text-slate-800 px-2.5 py-1 rounded-lg hover:bg-slate-100 transition">
+            Очистить форму
+          </button>
+        </div>
+
+        <form id="taskForm" class="space-y-3.5" autocomplete="off">
+          <input type="hidden" id="editTaskId" value="" />
+
+          <!-- Ряд 1: Дата, Номер задачи, Продукт, Сделка -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div>
+              <label for="fieldDate" class="block text-xs font-semibold text-slate-600 mb-1">Дата <span class="text-rose-500">*</span></label>
+              <input type="date" id="fieldDate" required
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+            </div>
+
+            <div class="relative">
+              <div class="flex items-center justify-between mb-1">
+                <label for="fieldTaskNumber" class="block text-xs font-semibold text-slate-600">Номер задачи <span class="text-rose-500">*</span></label>
+                <button type="button" id="btnPickOpenTask" class="text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline">
+                  Продолжить открытую ▾
+                </button>
+              </div>
+              <input type="text" id="fieldTaskNumber" required placeholder="01.09.2026_1"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+              <div id="openTasksDropdown" class="hidden absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-lg combobox-list p-1"></div>
+            </div>
+
+            <div>
+              <label for="fieldProduct" class="block text-xs font-semibold text-slate-600 mb-1">Направление / продукт</label>
+              <select id="fieldProduct"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"></select>
+            </div>
+
+            <div>
+              <label for="fieldDeal" class="block text-xs font-semibold text-slate-600 mb-1">Сделка / проект</label>
+              <input type="text" id="fieldDeal" placeholder="Название проекта или сделки"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+            </div>
+          </div>
+
+          <!-- Ряд 2: Поставщик (мультивыбор + Недавние), Клиент (поиск + Недавние) -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+            <!-- Поставщик (мультивыбор) -->
+            <div class="relative" id="supplierComboWrapper">
+              <div class="flex items-center justify-between mb-1">
+                <label for="fieldSupplier" class="block text-xs font-semibold text-slate-600">
+                  Поставщик <span class="text-slate-400 font-normal">(можно выбрать нескольких)</span>
+                </label>
+                <span id="multiSupplierHint" class="hidden text-[11px] font-semibold text-indigo-600"></span>
+              </div>
+              <div class="relative">
+                <input type="text" id="fieldSupplier" placeholder="Поиск или ввод нового поставщика..."
+                  class="w-full rounded-xl border border-slate-300 pl-3 pr-8 py-2 text-sm text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+                <button type="button" id="clearSupplierBtn" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1" title="Очистить поле">✕</button>
+              </div>
+              <div id="supplierDropdown" class="hidden absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-lg combobox-list"></div>
+              <!-- Чипы выбранных поставщиков -->
+              <div id="selectedSuppliersChips" class="flex flex-wrap gap-1.5 mt-1.5 empty:hidden"></div>
+            </div>
+
+            <!-- Клиент -->
+            <div class="relative" id="clientComboWrapper">
+              <label for="fieldClient" class="block text-xs font-semibold text-slate-600 mb-1">
+                Клиент <span class="text-slate-400 font-normal">(поиск или ввод нового)</span>
+              </label>
+              <div class="relative">
+                <input type="text" id="fieldClient" placeholder="Поиск или ввод нового клиента..."
+                  class="w-full rounded-xl border border-slate-300 pl-3 pr-8 py-2 text-sm text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+                <button type="button" id="clearClientBtn" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1" title="Очистить">✕</button>
+              </div>
+              <div id="clientDropdown" class="hidden absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-lg combobox-list"></div>
+            </div>
+          </div>
+
+          <!-- Ряд 3: С кем взаимодействовали, Этап / повод, Результат (тип) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            <div>
+              <label for="fieldInteraction" class="block text-xs font-semibold text-slate-600 mb-1">С кем взаимодействовали <span class="text-rose-500">*</span></label>
+              <select id="fieldInteraction" required
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"></select>
+            </div>
+
+            <div>
+              <label for="fieldStage" class="block text-xs font-semibold text-slate-600 mb-1">Этап / повод <span class="text-rose-500">*</span></label>
+              <select id="fieldStage" required
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"></select>
+            </div>
+
+            <div>
+              <label for="fieldResult" class="block text-xs font-semibold text-slate-600 mb-1">Результат (тип) <span class="text-rose-500">*</span></label>
+              <select id="fieldResult" required
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"></select>
+            </div>
+          </div>
+
+          <!-- Ряд 4: Что сделали / передали -->
+          <div>
+            <label for="fieldDescription" class="block text-xs font-semibold text-slate-600 mb-1">Что сделали / передали <span class="text-rose-500">*</span></label>
+            <textarea id="fieldDescription" rows="2" required placeholder="Кратко опишите выполненное действие и итог..."
+              class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition resize-y"></textarea>
+          </div>
+
+          <!-- Ряд 5: Кол-во, Время + таймер, Статус, Кто ждёт, Ссылка -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3.5 items-start">
+            <div class="lg:col-span-2">
+              <label for="fieldQty" class="block text-xs font-semibold text-slate-600 mb-1">Кол-во, шт.</label>
+              <input type="number" id="fieldQty" min="0" step="1" value="1" required
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+            </div>
+
+            <!-- Время + чипы + секундомер (Старт/Пауза/Сброс/Перенести) -->
+            <div class="lg:col-span-4">
+              <div class="flex items-center justify-between gap-1 mb-1">
+                <label for="fieldMinutes" class="block text-xs font-semibold text-slate-600">Время, мин <span class="text-rose-500">*</span></label>
+                <div class="inline-flex items-center gap-1 bg-slate-100 rounded-lg px-1.5 py-0.5">
+                  <span id="timerDot" class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                  <span id="timerDisplay" class="font-mono text-[11px] font-semibold text-slate-700">00:00</span>
+                  <button type="button" id="btnTimerPlayPause" class="px-1.5 py-0.5 rounded bg-white hover:bg-blue-50 text-blue-700 text-[10px] font-semibold border border-slate-200 transition" title="Старт / Пауза">▶</button>
+                  <button type="button" id="btnTimerReset" class="px-1 py-0.5 rounded hover:bg-slate-200 text-slate-500 text-[10px] transition" title="Сброс">↺</button>
+                  <button type="button" id="btnTimerApply" class="hidden px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-semibold transition" title="Перенести минуты в поле">→ мин</button>
+                </div>
+              </div>
+              <input type="number" id="fieldMinutes" min="1" step="1" value="15" required
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+              <div class="flex flex-wrap gap-1 mt-1.5">
+                <button type="button" data-mins="5" class="time-chip px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 hover:bg-blue-100 hover:text-blue-700 text-slate-600 transition">5м</button>
+                <button type="button" data-mins="10" class="time-chip px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 hover:bg-blue-100 hover:text-blue-700 text-slate-600 transition">10м</button>
+                <button type="button" data-mins="15" class="time-chip px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 hover:bg-blue-100 hover:text-blue-700 text-slate-600 transition">15м</button>
+                <button type="button" data-mins="20" class="time-chip px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 hover:bg-blue-100 hover:text-blue-700 text-slate-600 transition">20м</button>
+                <button type="button" data-mins="30" class="time-chip px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 hover:bg-blue-100 hover:text-blue-700 text-slate-600 transition">30м</button>
+                <button type="button" data-mins="45" class="time-chip px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 hover:bg-blue-100 hover:text-blue-700 text-slate-600 transition">45м</button>
+                <button type="button" data-mins="60" class="time-chip px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 hover:bg-blue-100 hover:text-blue-700 text-slate-600 transition">60м</button>
+              </div>
+            </div>
+
+            <div class="lg:col-span-2">
+              <label for="fieldStatus" class="block text-xs font-semibold text-slate-600 mb-1">Статус <span class="text-rose-500">*</span></label>
+              <select id="fieldStatus" required
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"></select>
+            </div>
+
+            <div class="lg:col-span-2">
+              <label for="fieldWaiting" class="block text-xs font-semibold text-slate-600 mb-1">Кто ждёт ответа</label>
+              <select id="fieldWaiting"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition"></select>
+            </div>
+
+            <div class="lg:col-span-2">
+              <label for="fieldDocLink" class="block text-xs font-semibold text-slate-600 mb-1">Ссылка / № док.</label>
+              <input type="text" id="fieldDocLink" placeholder="№ закупки / URL"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+            </div>
+          </div>
+
+          <!-- Умные ненавязчивые подсказки -->
+          <div id="smartHintsBox" class="hidden space-y-1.5"></div>
+
+          <!-- Кнопки сохранения -->
+          <div class="pt-2 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100">
+            <button id="btnCancelEdit" type="button" class="hidden px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs sm:text-sm font-medium transition">
+              Отменить редактирование
+            </button>
+            <button id="btnSubmitTask" type="submit" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold shadow-xs transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              <span id="btnSubmitText">Добавить запись в трекер</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- 4. Панель «Открытые задачи» (В работе / Ожидаем ответ) -->
+      <div id="openTasksPanel" class="hidden bg-white rounded-2xl border border-amber-200 shadow-xs overflow-hidden">
+        <button id="btnToggleOpenPanel" type="button" class="w-full px-4 py-2.5 bg-amber-50/70 hover:bg-amber-50 flex items-center justify-between gap-2 transition">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            <h3 class="text-xs sm:text-sm font-bold text-slate-800">Открытые задачи («В работе» / «Ожидаем ответ»)</h3>
+            <span id="openTasksCountBadge" class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-200/80 text-amber-900">0</span>
+          </div>
+          <span id="openPanelChevron" class="text-xs text-slate-500 font-medium">Свернуть ▴</span>
+        </button>
+        <div id="openTasksPanelBody" class="divide-y divide-slate-100 max-h-72 overflow-y-auto"></div>
+      </div>
+
+      <!-- 5. Таблица задач с фильтрами -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div class="p-3.5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+          <div class="flex flex-wrap items-center gap-2">
+            <h3 class="text-base font-bold text-slate-900">Записи трекера</h3>
+            <span id="tasksCountBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">0</span>
+            <span id="filteredHoursBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700">0 ч 00 мин</span>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Фильтр по дате -->
+            <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
+              <input type="date" id="filterDate" class="bg-transparent text-xs text-slate-700 outline-none" title="Фильтр по дате" />
+              <button type="button" id="btnFilterAllDates" class="text-[11px] font-medium px-2 py-0.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 transition">Все дни</button>
+            </div>
+
+            <!-- Фильтр по статусу -->
+            <select id="filterStatus" class="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-500">
+              <option value="">Все статусы</option>
+            </select>
+
+            <!-- Фильтр по этапу -->
+            <select id="filterStage" class="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-500 max-w-[190px]">
+              <option value="">Все этапы</option>
+            </select>
+
+            <!-- Поиск -->
+            <div class="relative flex-1 sm:flex-initial">
+              <input type="text" id="filterSearch" placeholder="Поиск по тексту, клиенту..."
+                class="w-full sm:w-48 rounded-xl border border-slate-200 bg-slate-50 pl-7 pr-2.5 py-1.5 text-xs text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition" />
+              <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+
+            <button type="button" id="btnClearAllTasks" class="text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1.5 rounded-xl transition">
+              Очистить всё
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <th class="py-2.5 px-3 whitespace-nowrap">Дата / №</th>
+                <th class="py-2.5 px-3 min-w-[190px]">Контрагенты и продукт</th>
+                <th class="py-2.5 px-3 min-w-[250px]">Этап и описание работы</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Время / Кол-во</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Статус / Отдел</th>
+                <th class="py-2.5 px-3 text-right whitespace-nowrap">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="tasksTableBody" class="divide-y divide-slate-100 text-sm"></tbody>
+          </table>
+        </div>
+
+        <div id="emptyTasksState" class="hidden py-10 px-4 text-center">
+          <div class="w-11 h-11 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2.5">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <p class="text-sm font-semibold text-slate-700">Записей пока нет</p>
+          <p class="text-xs text-slate-500 mt-1">Добавьте задачу вручную, откройте «Пакетный мониторинг» или загрузите существующий Excel.</p>
+          <div class="mt-3">
+            <button type="button" id="btnLoadDemoData"
+              class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-200 text-xs font-semibold transition">
+              <span>✨</span> Загрузить демонстрационный пример (5 задач)
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== ВКЛАДКА 2: СВОДКА РУКОВОДИТЕЛЯ ========== -->
+    <section id="viewSummary" class="hidden space-y-4">
+      <!-- Заголовок сводки -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-slate-900">Сводка руководителя (предпросмотр)</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Рассчитывается по логике формул листа «Сводка руководителя» в Excel</p>
+        </div>
+        <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+          <label for="summaryRefDate" class="text-xs font-semibold text-slate-600">Опорная дата («СЕГОДНЯ»):</label>
+          <input type="date" id="summaryRefDate" class="bg-transparent text-sm font-semibold text-blue-700 outline-none" />
+        </div>
+      </div>
+
+      <!-- Умная плашка при 0 записей за выбранный день -->
+      <div id="summaryZeroDayBanner" class="hidden bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div class="flex items-center gap-2 text-xs sm:text-sm text-amber-900">
+          <span>💡</span>
+          <span id="summaryZeroDayText">За выбранную дату записей нет.</span>
+        </div>
+        <button id="btnJumpLastWorkday" type="button"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition shrink-0">
+          Перейти к последнему рабочему дню
+        </button>
+      </div>
+
+      <!-- 3 карточки KPI -->
+      <div id="summaryKpiGrid" class="grid grid-cols-1 lg:grid-cols-3 gap-4"></div>
+
+      <!-- Таблица взаимодействий по отделам -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div class="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-base font-bold text-slate-900">Взаимодействие с подразделениями</h3>
+          <div class="inline-flex rounded-xl bg-slate-100 p-1">
+            <button type="button" data-sum-period="day" class="sum-period-btn px-3 py-1 rounded-lg text-xs font-semibold bg-white text-blue-700 shadow-xs transition">За день</button>
+            <button type="button" data-sum-period="week" class="sum-period-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition">За неделю</button>
+            <button type="button" data-sum-period="month" class="sum-period-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition">За месяц</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                <th class="py-2.5 px-4">Подразделение / контрагент</th>
+                <th class="py-2.5 px-4 text-right">Записей</th>
+                <th class="py-2.5 px-4 text-right">Готово, шт.</th>
+                <th class="py-2.5 px-4 text-right">Часы</th>
+              </tr>
+            </thead>
+            <tbody id="summaryDeptTableBody" class="divide-y divide-slate-100 text-sm"></tbody>
+            <tfoot id="summaryDeptTableFoot" class="bg-slate-50 border-t border-slate-200 font-bold text-sm text-slate-800"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== ВКЛАДКА 3: СПРАВОЧНИКИ ========== -->
+    <section id="viewDictionaries" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 mb-4 border-b border-slate-100">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-slate-900">Управление справочниками</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Добавляйте и удаляйте значения для всех списков — изменения сразу сохраняются в браузере и выгружаются в Excel</p>
+          </div>
+          <button id="btnResetActiveDict" type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-600 hover:text-slate-900 transition shrink-0">
+            ↺ Сбросить текущий список по умолчанию
+          </button>
+        </div>
+
+        <!-- Переключатель справочников -->
+        <div id="dictTabsContainer" class="flex flex-wrap gap-2 mb-4"></div>
+
+        <!-- Добавление нового элемента и поиск -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 mb-4">
+          <form id="dictAddForm" class="md:col-span-8 flex gap-2" autocomplete="off">
+            <input type="text" id="dictNewItemInput" required placeholder="Введите новое значение..."
+              class="flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-sm text-slate-800 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+            <button type="submit"
+              class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold shadow-xs transition shrink-0">
+              <span>+</span> Добавить
+            </button>
+          </form>
+
+          <div class="md:col-span-4 relative">
+            <input type="text" id="dictSearchInput" placeholder="Фильтр по списку..."
+              class="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-3 py-2 text-sm text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition" />
+            <svg class="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        </div>
+
+        <!-- Список значений выбранного справочника -->
+        <div class="rounded-xl border border-slate-200 overflow-hidden">
+          <div class="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-semibold text-slate-500">
+            <span id="dictListHeaderTitle">Записи справочника</span>
+            <span id="dictListCount">0 шт.</span>
+          </div>
+          <div id="dictItemsList" class="divide-y divide-slate-100 max-h-[460px] overflow-y-auto"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== МОДАЛЬНОЕ ОКНО: ПАКЕТНЫЙ МОНИТОРИНГ ЗАКУПОК ==================== -->
+  <div id="batchModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/70">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">⚡ Пакетный мониторинг закупок</h3>
+          <p class="text-xs text-slate-500">Задайте общие параметры один раз и быстро внесите список лотов или заявок</p>
+        </div>
+        <button type="button" id="btnCloseBatchModal" class="text-slate-400 hover:text-slate-700 p-1 text-lg leading-none">✕</button>
+      </div>
+
+      <div class="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+        <!-- Общие настройки пакета -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-blue-50/50 border border-blue-100 rounded-xl p-3">
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Дата</label>
+            <input type="date" id="batchDate" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Направление / продукт</label>
+            <select id="batchProduct" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"></select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Мин. на 1 лот</label>
+            <input type="number" id="batchMinutes" min="1" value="10" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-1">От кого задача</label>
+            <select id="batchWaiting" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"></select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Статус</label>
+            <select id="batchStatus" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500"></select>
+          </div>
+        </div>
+
+        <!-- Строки пакетного ввода -->
+        <div class="space-y-2.5" id="batchRowsContainer"></div>
+
+        <button type="button" id="btnAddBatchRow" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/40 text-xs font-semibold text-slate-600 hover:text-blue-700 transition">
+          + Добавить строку
+        </button>
+      </div>
+
+      <div class="px-5 py-3.5 border-t border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+        <span id="batchSummaryInfo" class="text-xs text-slate-500">Заполнено строк: 0</span>
+        <div class="flex items-center gap-2">
+          <button type="button" id="btnCancelBatchModal" class="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs sm:text-sm font-medium text-slate-700 transition">Отмена</button>
+          <button type="button" id="btnSaveBatchRows" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold shadow-xs transition">Добавить все (0)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== МОДАЛЬНОЕ ОКНО: АУДИТ ПЕРЕД ВЫГРУЗКОЙ ==================== -->
+  <div id="auditModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full max-h-[88vh] flex flex-col overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/70">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">Проверка качества перед выгрузкой</h3>
+          <p class="text-xs text-slate-500">Кликните по любому замечанию, чтобы сразу перейти к исправлению</p>
+        </div>
+        <button type="button" id="btnCloseAuditModal" class="text-slate-400 hover:text-slate-700 p-1 text-lg leading-none">✕</button>
+      </div>
+
+      <div id="auditModalBody" class="p-4 sm:p-5 overflow-y-auto space-y-3.5 flex-1"></div>
+
+      <div class="px-5 py-3 border-t border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2">
+        <button type="button" id="btnAuditToExport" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition">
+          Перейти к выгрузке Excel
+        </button>
+        <button type="button" id="btnDoneAuditModal" class="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition">
+          Закрыть
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== МОДАЛЬНОЕ ОКНО: НАСТРОЙКИ ЭКСПОРТА EXCEL ==================== -->
+  <div id="exportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+        <h3 class="text-base font-bold text-slate-900">Выгрузка Excel для руководства</h3>
+        <button type="button" id="btnCloseExportModal" class="text-slate-400 hover:text-slate-700 p-1 text-lg leading-none">✕</button>
+      </div>
+
+      <div class="p-5 space-y-4">
+        <div>
+          <label for="exportFilename" class="block text-xs font-semibold text-slate-600 mb-1">Имя файла (.xlsx)</label>
+          <input type="text" id="exportFilename" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500" />
+        </div>
+
+        <label class="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+          <input type="checkbox" id="exportFixMonthFormulas" checked class="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+          <div>
+            <div class="text-xs font-semibold text-slate-800">Корректные формулы блока «за месяц» (L5:L10)</div>
+            <div class="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+              Формировать итоги за календарный месяц с использованием функции <code>EOMONTH</code>.
+            </div>
+          </div>
+        </label>
+
+        <label class="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+          <input type="checkbox" id="exportSortByDate" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+          <div class="text-xs font-semibold text-slate-800">Отсортировать записи по дате перед выгрузкой</div>
+        </label>
+
+        <div id="exportAuditHint" class="hidden px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center justify-between gap-2">
+          <span id="exportAuditHintText"></span>
+          <button type="button" id="btnExportOpenAudit" class="font-semibold underline hover:text-amber-950 shrink-0">Посмотреть</button>
+        </div>
+      </div>
+
+      <div class="px-5 py-3.5 border-t border-slate-200 bg-slate-50/70 flex items-center justify-end gap-2">
+        <button type="button" id="btnCancelExportModal" class="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs sm:text-sm font-medium text-slate-700 transition">Отмена</button>
+        <button type="button" id="btnConfirmExport" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-xs transition">
+          Скачать .xlsx
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== УНИВЕРСАЛЬНОЕ МОДАЛЬНОЕ ОКНО ПОДТВЕРЖДЕНИЯ ==================== -->
+  <div id="customModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-4">
+      <div class="flex items-start justify-between gap-3">
+        <h3 id="modalTitle" class="text-base font-bold text-slate-900">Подтверждение</h3>
+        <button type="button" id="modalCloseX" class="text-slate-400 hover:text-slate-600">✕</button>
+      </div>
+      <p id="modalMessage" class="text-sm text-slate-600 leading-relaxed"></p>
+      <div id="modalActions" class="flex flex-wrap items-center justify-end gap-2 pt-2"></div>
+    </div>
+  </div>
+
+  <!-- ==================== TOAST УВЕДОМЛЕНИЯ ==================== -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <script>
+    // =========================================================================
+    // 1. ТИПОВЫЕ СПРАВОЧНИКИ (УНИВЕРСАЛЬНЫЙ B2B-ШАБЛОН)
+    // =========================================================================
+    const DEFAULT_EMPLOYEES = [
+      'Иванов А.С.',
+      'Петрова Е.В.',
+      'Смирнов Д.К.',
+      'Козлова М.И.',
+      'Соколов П.А.'
+    ];
+
+    const DEFAULT_DEPARTMENTS = [
+      'Отдел продаж',
+      'Бухгалтерия',
+      'Отдел подготовки проектов',
+      'Отдел маркетинга',
+      'Отдел персонала',
+      'Тендерный отдел',
+      'Отдел сопровождения клиентов',
+      'Юридическая служба',
+      'Сервисный отдел',
+      'Отдел логистики',
+      'ПОСТАВЩИК',
+      'КЛИЕНТ',
+      'РУКОВОДСТВО',
+      'Без взаимодействия'
+    ];
+
+    const DEFAULT_PRODUCTS = [
+      'Базовая поставка',
+      'Расходные материалы',
+      'Оборудование (основное)',
+      'Комплектующие и ЗИП',
+      'Сервисное обслуживание',
+      'Пусконаладка и монтаж',
+      'Программное обеспечение / Лицензии',
+      'Проектные решения',
+      'Аренда оборудования',
+      'Консалтинг и аудит',
+      'Обучение персонала'
+    ];
+
+    const DEFAULT_STAGES = [
+      'Ответ на запрос / письмо',
+      'Авторизация проекта у поставщика',
+      'Запрос информации у поставщика по продукту',
+      'Запрос документов на продукцию',
+      'Мониторинг закупок',
+      'Работа с тендерами (запросы, разъяснения)',
+      'Перенаправление задачи',
+      'Сбор данных для аналитики',
+      'Анализ данных и отчётность',
+      'Стратегия по аналитике',
+      'Подготовка ко встрече с партнёром',
+      'Встреча / переговоры',
+      'Работа с прайс-листами',
+      'Работа с карточками товара / номенклатурой',
+      'Работа с возвратами и рекламациями',
+      'Ведение договора с поставщиком',
+      'Проработка нового поставщика',
+      'Подготовка обучения / презентации',
+      'Другое'
+    ];
+
+    const DEFAULT_RESULTS = [
+      'Заключение по тендеру',
+      'Пакет материалов юристу',
+      'Проект письма',
+      'Жалоба / претензия',
+      'Проект ответа на претензию',
+      'Ответ на продуктовый запрос',
+      'Запрос уточнений',
+      'Коммерческое предложение',
+      'Карточка товара',
+      'Отчёт / анализ',
+      'Проведено обучение',
+      'Иной результат'
+    ];
+
+    const DEFAULT_STATUSES = [
+      'Готово',
+      'Передано',
+      'В работе',
+      'Отменено',
+      'Ожидаем ответ'
+    ];
+
+    const DEFAULT_SUPPLIERS = [
+      'ООО «Альфа-Снаб», г. Москва',
+      'АО «ПромТехКомплект», г. Санкт-Петербург',
+      'ООО «Вектор-Логистик», г. Екатеринбург',
+      'ООО «ТехноПрайм», г. Москва',
+      'ГК «СибИндустрия», г. Новосибирск',
+      'ООО «БалтИмпорт», г. Калининград'
+    ];
+
+    const DEFAULT_CLIENTS = [
+      'ООО «СтройИнвестГрупп», г. Москва',
+      'АО «СеверПромРесурс», г. Санкт-Петербург',
+      'ООО «Торговый Дом Орион», г. Казань',
+      'ГК «УралМашСервис», г. Екатеринбург',
+      'ООО «ЮгАгроХолдинг», г. Краснодар',
+      'АО «ЦентрКомплект», г. Нижний Новгород',
+      'ООО «МегаПолис-Ритейл», г. Москва',
+      'ФГУП «Научно-производственный центр», г. Москва'
+    ];
+
+    const DICTIONARY_CONFIG = [
+      { key: 'employees', label: 'Сотрудники', placeholder: 'Например: Морозов И.В.', defaults: DEFAULT_EMPLOYEES },
+      { key: 'departments', label: 'Отделы / взаимодействия', placeholder: 'Например: Отдел закупок', defaults: DEFAULT_DEPARTMENTS },
+      { key: 'products', label: 'Направления / продукты', placeholder: 'Например: Поставка по 44-ФЗ', defaults: DEFAULT_PRODUCTS },
+      { key: 'stages', label: 'Этапы / поводы', placeholder: 'Например: Согласование спецификации', defaults: DEFAULT_STAGES },
+      { key: 'results', label: 'Результаты (тип)', placeholder: 'Например: Подписанный акт', defaults: DEFAULT_RESULTS },
+      { key: 'statuses', label: 'Статусы', placeholder: 'Например: На согласовании', defaults: DEFAULT_STATUSES },
+      { key: 'suppliers', label: 'Поставщики', placeholder: 'Например: ООО «Новый Поставщик», г. Москва', defaults: DEFAULT_SUPPLIERS },
+      { key: 'clients', label: 'Клиенты', placeholder: 'Например: АО «Новый Клиент», г. Казань', defaults: DEFAULT_CLIENTS }
+    ];
+
+    const EXCEL_HEADERS = [
+      'Номер задачи',
+      'Дата',
+      'Сотрудник',
+      'Поставщик',
+      'Клиент',
+      'Сделка / проект',
+      'Направление / продукт',
+      'С кем взаимодействовали',
+      'Этап / повод',
+      'Что сделали / передали',
+      'Результат (тип)',
+      'Кол-во, шт.',
+      'Время, мин',
+      'Статус',
+      'Кто ждёт ответа (от кого задача)',
+      'Ссылка / № документа'
+    ];
+
+    const QUICK_PRESETS = {
+      monitoring: {
+        interaction: 'Без взаимодействия',
+        stage: 'Мониторинг закупок',
+        description: 'Мониторинг закупок: проверка текущих лотов, фиксация статусов и ключевых условий',
+        result: 'Иной результат',
+        minutes: 10,
+        status: 'Готово',
+        waiting: 'Тендерный отдел'
+      },
+      supplier_request: {
+        interaction: 'ПОСТАВЩИК',
+        stage: 'Запрос информации у поставщика по продукту',
+        description: 'Отправлен запрос поставщику на обновление стоимости и сроков поставки',
+        result: 'Запрос уточнений',
+        minutes: 15,
+        status: 'В работе',
+        waiting: 'Отдел продаж'
+      },
+      prices_erp: {
+        interaction: 'ПОСТАВЩИК',
+        stage: 'Работа с карточками товара / номенклатурой',
+        description: 'Получение актуального прайс-листа от поставщика и обновление цен в учётной системе',
+        result: 'Карточка товара',
+        minutes: 15,
+        status: 'Готово',
+        waiting: 'Отдел продаж'
+      },
+      sales_reply: {
+        interaction: 'Отдел продаж',
+        stage: 'Ответ на запрос / письмо',
+        description: 'Информирование менеджера отдела продаж об актуальности цен и наличии позиции',
+        result: 'Ответ на продуктовый запрос',
+        minutes: 5,
+        status: 'Готово',
+        waiting: 'Отдел продаж'
+      },
+      analytics: {
+        interaction: 'Без взаимодействия',
+        stage: 'Сбор данных для аналитики',
+        description: 'Сбор и свод показателей по текущим проектам за отчётный период',
+        result: 'Отчёт / анализ',
+        minutes: 60,
+        status: 'В работе',
+        waiting: 'РУКОВОДСТВО'
+      }
+    };
+
+    const STORAGE_KEYS = {
+      TASKS: 'dept_tracker_tasks_v1',
+      EMPLOYEE: 'dept_tracker_employee_v1',
+      EMPLOYEES: 'dept_tracker_employees_v1',
+      DEPARTMENTS: 'dept_tracker_departments_v1',
+      PRODUCTS: 'dept_tracker_products_v1',
+      STAGES: 'dept_tracker_stages_v1',
+      RESULTS: 'dept_tracker_results_v1',
+      STATUSES: 'dept_tracker_statuses_v1',
+      SUPPLIERS: 'dept_tracker_suppliers_v1',
+      CLIENTS: 'dept_tracker_clients_v1',
+      RECENT_SUPPLIERS: 'dept_tracker_recent_sup_v1',
+      RECENT_CLIENTS: 'dept_tracker_recent_cli_v1'
+    };
+
+    // =========================================================================
+    // 2. СОСТОЯНИЕ ПРИЛОЖЕНИЯ
+    // =========================================================================
+    const state = {
+      tasks: [],
+      selectedEmployee: DEFAULT_EMPLOYEES[0],
+      employees: [...DEFAULT_EMPLOYEES],
+      departments: [...DEFAULT_DEPARTMENTS],
+      products: [...DEFAULT_PRODUCTS],
+      stages: [...DEFAULT_STAGES],
+      results: [...DEFAULT_RESULTS],
+      statuses: [...DEFAULT_STATUSES],
+      suppliers: [...DEFAULT_SUPPLIERS],
+      clients: [...DEFAULT_CLIENTS],
+      recentSuppliers: [],
+      recentClients: [],
+      selectedSuppliers: [],
+      rawSuppliersSheet: null,
+      rawClientsSheet: null,
+      historyStack: [],
+      weekAnchorIso: '',
+      summaryPeriod: 'day',
+      summaryManualPeriod: false,
+      activeDictKey: 'employees',
+      openPanelExpanded: true,
+      timerRunning: false,
+      timerAccumulatedSec: 0,
+      timerStartMs: 0,
+      timerInterval: null
+    };
+
+    // =========================================================================
+    // 3. УТИЛИТЫ ДАТЫ, ФОРМАТИРОВАНИЯ И ХРАНЕНИЯ
+    // =========================================================================
+    function getTodayISO() {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+
+    function isoToDateObj(iso) {
+      const [y, m, d] = iso.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+
+    function dateObjToIso(dt) {
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    }
+
+    function isoToRuDate(iso) {
+      if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+      const [y, m, d] = iso.split('-');
+      return `${d}.${m}.${y}`;
+    }
+
+    function isoToShortRuDate(iso) {
+      if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+      const [, m, d] = iso.split('-');
+      return `${d}.${m}`;
+    }
+
+    function ruDateToIso(ru) {
+      if (!ru) return '';
+      const str = String(ru).trim();
+      const match = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+      if (match) return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+      return '';
+    }
+
+    function formatMinutesToHM(totalMins) {
+      const mins = Math.max(0, Math.round(Number(totalMins) || 0));
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h} ч ${String(m).padStart(2, '0')} мин`;
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function generateUid() {
+      return 't_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    }
+
+    function computeNextTaskNumber(isoDate, extraOffset = 0) {
+      const ruDate = isoToRuDate(isoDate);
+      if (!ruDate) return '';
+      const prefix = ruDate + '_';
+      let maxNum = 0;
+      for (const t of state.tasks) {
+        if (t.taskNumber && t.taskNumber.startsWith(prefix)) {
+          const num = parseInt(t.taskNumber.slice(prefix.length), 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
+        }
+      }
+      return `${prefix}${maxNum + 1 + extraOffset}`;
+    }
+
+    function recordRecent(listKey, value) {
+      const v = String(value || '').trim();
+      if (!v) return;
+      const arr = state[listKey].filter(item => item !== v);
+      arr.unshift(v);
+      state[listKey] = arr.slice(0, 10);
+    }
+
+    function persistState() {
+      try {
+        localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(state.tasks));
+        localStorage.setItem(STORAGE_KEYS.EMPLOYEE, state.selectedEmployee);
+        localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(state.employees));
+        localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, JSON.stringify(state.departments));
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(state.products));
+        localStorage.setItem(STORAGE_KEYS.STAGES, JSON.stringify(state.stages));
+        localStorage.setItem(STORAGE_KEYS.RESULTS, JSON.stringify(state.results));
+        localStorage.setItem(STORAGE_KEYS.STATUSES, JSON.stringify(state.statuses));
+        localStorage.setItem(STORAGE_KEYS.RECENT_SUPPLIERS, JSON.stringify(state.recentSuppliers));
+        localStorage.setItem(STORAGE_KEYS.RECENT_CLIENTS, JSON.stringify(state.recentClients));
+      } catch (err) {
+        console.warn('Ошибка сохранения в localStorage:', err);
+      }
+      try {
+        localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(state.suppliers));
+        localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(state.clients));
+      } catch (err) {
+        console.warn('Справочники контрагентов слишком велики для localStorage — хранятся в памяти сессии.');
+      }
+    }
+
+    function loadArrayFromStorage(storageKey, fallback) {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) return [...fallback];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...fallback];
+      } catch {
+        return [...fallback];
+      }
+    }
+
+    function loadState() {
+      try {
+        const savedTasks = localStorage.getItem(STORAGE_KEYS.TASKS);
+        if (savedTasks) {
+          const parsed = JSON.parse(savedTasks);
+          if (Array.isArray(parsed)) state.tasks = parsed;
+        }
+        state.employees = loadArrayFromStorage(STORAGE_KEYS.EMPLOYEES, DEFAULT_EMPLOYEES);
+        state.departments = loadArrayFromStorage(STORAGE_KEYS.DEPARTMENTS, DEFAULT_DEPARTMENTS);
+        state.products = loadArrayFromStorage(STORAGE_KEYS.PRODUCTS, DEFAULT_PRODUCTS);
+        state.stages = loadArrayFromStorage(STORAGE_KEYS.STAGES, DEFAULT_STAGES);
+        state.results = loadArrayFromStorage(STORAGE_KEYS.RESULTS, DEFAULT_RESULTS);
+        state.statuses = loadArrayFromStorage(STORAGE_KEYS.STATUSES, DEFAULT_STATUSES);
+        state.suppliers = loadArrayFromStorage(STORAGE_KEYS.SUPPLIERS, DEFAULT_SUPPLIERS);
+        state.clients = loadArrayFromStorage(STORAGE_KEYS.CLIENTS, DEFAULT_CLIENTS);
+
+        const savedEmp = localStorage.getItem(STORAGE_KEYS.EMPLOYEE);
+        state.selectedEmployee = (savedEmp && state.employees.includes(savedEmp))
+          ? savedEmp
+          : (state.employees[0] || '');
+
+        const recSup = localStorage.getItem(STORAGE_KEYS.RECENT_SUPPLIERS);
+        if (recSup) state.recentSuppliers = JSON.parse(recSup) || [];
+        const recCli = localStorage.getItem(STORAGE_KEYS.RECENT_CLIENTS);
+        if (recCli) state.recentClients = JSON.parse(recCli) || [];
+      } catch (err) {
+        console.warn('Не удалось загрузить сохранённые данные:', err);
+      }
+    }
+
+    function loadDemoTasks() {
+      const today = getTodayISO();
+      const dtYesterday = isoToDateObj(today);
+      dtYesterday.setDate(dtYesterday.getDate() - 1);
+      const yesterday = dateObjToIso(dtYesterday);
+
+      pushHistory('загрузка демо-примера');
+      const samples = [
+        {
+          id: generateUid(),
+          taskNumber: computeNextTaskNumber(today, 0),
+          date: today,
+          employee: state.selectedEmployee,
+          supplier: '',
+          client: 'ООО «СтройИнвестГрупп», г. Москва',
+          deal: 'Поставка №412',
+          product: state.products[2] || state.products[0] || '',
+          interaction: 'Без взаимодействия',
+          stage: 'Мониторинг закупок',
+          description: 'Мониторинг закупок: проверка конкурсной документации и условий поставки',
+          result: 'Заключение по тендеру',
+          qty: 1,
+          minutes: 30,
+          status: 'Готово',
+          waiting: 'Тендерный отдел',
+          docLink: '0372200019426000018',
+          createdAt: Date.now()
+        },
+        {
+          id: generateUid(),
+          taskNumber: computeNextTaskNumber(today, 1),
+          date: today,
+          employee: state.selectedEmployee,
+          supplier: 'ООО «Альфа-Снаб», г. Москва',
+          client: 'АО «СеверПромРесурс», г. Санкт-Петербург',
+          deal: 'Проект модернизации',
+          product: state.products[3] || state.products[0] || '',
+          interaction: 'ПОСТАВЩИК',
+          stage: 'Запрос информации у поставщика по продукту',
+          description: 'Направлен запрос на актуальные цены и сроки отгрузки со склада',
+          result: 'Запрос уточнений',
+          qty: 1,
+          minutes: 20,
+          status: 'Ожидаем ответ',
+          waiting: 'Отдел продаж',
+          docLink: 'КП-1084',
+          createdAt: Date.now() + 1
+        },
+        {
+          id: generateUid(),
+          taskNumber: computeNextTaskNumber(today, 2),
+          date: today,
+          employee: state.selectedEmployee,
+          supplier: 'АО «ПромТехКомплект», г. Санкт-Петербург',
+          client: '',
+          deal: '',
+          product: state.products[1] || state.products[0] || '',
+          interaction: 'ПОСТАВЩИК',
+          stage: 'Работа с карточками товара / номенклатурой',
+          description: 'Обновление прайс-листа в учётной системе по итогам сверки с поставщиком',
+          result: 'Карточка товара',
+          qty: 12,
+          minutes: 45,
+          status: 'Готово',
+          waiting: 'Отдел продаж',
+          docLink: '',
+          createdAt: Date.now() + 2
+        },
+        {
+          id: generateUid(),
+          taskNumber: computeNextTaskNumber(today, 3),
+          date: today,
+          employee: state.selectedEmployee,
+          supplier: '',
+          client: 'ООО «Торговый Дом Орион», г. Казань',
+          deal: 'Договор №88/26',
+          product: state.products[7] || state.products[0] || '',
+          interaction: 'Отдел продаж',
+          stage: 'Сбор данных для аналитики',
+          description: 'Подготовка расчёта маржинальности и сводной таблицы по спецификации клиента',
+          result: 'Коммерческое предложение',
+          qty: 1,
+          minutes: 60,
+          status: 'В работе',
+          waiting: 'Отдел продаж',
+          docLink: '',
+          createdAt: Date.now() + 3
+        },
+        {
+          id: generateUid(),
+          taskNumber: computeNextTaskNumber(yesterday, 0),
+          date: yesterday,
+          employee: state.selectedEmployee,
+          supplier: '',
+          client: 'ГК «УралМашСервис», г. Екатеринбург',
+          deal: 'Годовой контракт',
+          product: state.products[4] || state.products[0] || '',
+          interaction: 'Юридическая служба',
+          stage: 'Ведение договора с поставщиком',
+          description: 'Согласование протокола разногласий и передача пакета документов юристам',
+          result: 'Пакет материалов юристу',
+          qty: 1,
+          minutes: 90,
+          status: 'Передано',
+          waiting: 'Юридическая служба',
+          docLink: 'ДОГ-2026/19',
+          createdAt: Date.now() - 10000
+        }
+      ];
+
+      state.tasks.push(...samples);
+      samples.forEach(t => {
+        if (t.client) recordRecent('recentClients', t.client);
+        if (t.supplier) recordRecent('recentSuppliers', t.supplier);
+      });
+      persistState();
+      resetForm(true);
+      refreshAllViews();
+      showToast('Загружены демонстрационные записи (5 шт.)', 'success');
+    }
+
+    // =========================================================================
+    // 4. UNDO (ИСТОРИЯ ДО 30 ДЕЙСТВИЙ + CTRL+Z)
+    // =========================================================================
+    function pushHistory(label) {
+      state.historyStack.push({
+        label,
+        tasks: JSON.parse(JSON.stringify(state.tasks))
+      });
+      if (state.historyStack.length > 30) {
+        state.historyStack.shift();
+      }
+      updateUndoButton();
+    }
+
+    function updateUndoButton() {
+      const btn = document.getElementById('btnUndo');
+      const badge = document.getElementById('undoCountBadge');
+      const count = state.historyStack.length;
+      btn.disabled = count === 0;
+      if (count > 0) {
+        badge.textContent = count;
+        badge.classList.remove('hidden');
+        btn.title = `Отменить: ${state.historyStack[count - 1].label} (Ctrl+Z)`;
+      } else {
+        badge.classList.add('hidden');
+        btn.title = 'Отменить последнее действие (Ctrl+Z)';
+      }
+    }
+
+    function performUndo() {
+      if (state.historyStack.length === 0) return;
+      const snapshot = state.historyStack.pop();
+      state.tasks = snapshot.tasks;
+      persistState();
+      updateUndoButton();
+      refreshAllViews();
+      showToast(`Отменено: ${snapshot.label}`, 'info');
+    }
+
+    // =========================================================================
+    // 5. TOAST И КАСТОМНЫЕ МОДАЛКИ
+    // =========================================================================
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const colors = {
+        success: 'bg-emerald-600 text-white',
+        error: 'bg-rose-600 text-white',
+        warning: 'bg-amber-500 text-white',
+        info: 'bg-slate-800 text-white'
+      };
+      const el = document.createElement('div');
+      el.className = `pointer-events-auto px-4 py-2.5 rounded-xl shadow-lg text-xs sm:text-sm font-medium transition-all duration-300 opacity-0 translate-y-2 ${colors[type] || colors.info}`;
+      el.textContent = message;
+      container.appendChild(el);
+      requestAnimationFrame(() => el.classList.remove('opacity-0', 'translate-y-2'));
+      setTimeout(() => {
+        el.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => el.remove(), 300);
+      }, 3200);
+    }
+
+    function openModal({ title, message, buttons }) {
+      const modal = document.getElementById('customModal');
+      document.getElementById('modalTitle').textContent = title;
+      document.getElementById('modalMessage').textContent = message;
+      const actions = document.getElementById('modalActions');
+      actions.innerHTML = '';
+
+      const close = () => modal.classList.add('hidden');
+      document.getElementById('modalCloseX').onclick = close;
+
+      buttons.forEach(btn => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = btn.label;
+        b.className = btn.className || 'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition';
+        b.onclick = () => {
+          close();
+          if (btn.onClick) btn.onClick();
+        };
+        actions.appendChild(b);
+      });
+      modal.classList.remove('hidden');
+    }
+
+    // =========================================================================
+    // 6. УПРАВЛЕНИЕ СПРАВОЧНИКАМИ (ДОБАВЛЕНИЕ / УДАЛЕНИЕ / СБРОС)
+    // =========================================================================
+    function addDictionaryItem(dictKey, rawValue, silent = false) {
+      const val = String(rawValue || '').trim();
+      if (!val) return false;
+      const list = state[dictKey];
+      if (!Array.isArray(list)) return false;
+
+      const exists = list.some(item => item.trim().toLowerCase() === val.toLowerCase());
+      if (exists) {
+        if (!silent) showToast(`«${val}» уже есть в справочнике`, 'warning');
+        return false;
+      }
+
+      if (dictKey === 'suppliers' || dictKey === 'clients') {
+        list.unshift(val);
+        if (dictKey === 'suppliers') state.rawSuppliersSheet = null;
+        if (dictKey === 'clients') state.rawClientsSheet = null;
+      } else {
+        list.push(val);
+      }
+
+      if (dictKey === 'employees' && !state.selectedEmployee) {
+        state.selectedEmployee = val;
+      }
+
+      persistState();
+      refreshAllSelects();
+      updateDictStatusBadge();
+      if (!document.getElementById('viewDictionaries').classList.contains('hidden')) {
+        renderDictionariesView();
+      }
+      if (!document.getElementById('viewSummary').classList.contains('hidden')) {
+        renderSummaryView();
+      }
+      if (!silent) showToast(`Добавлено в справочник: «${val}»`, 'success');
+      return true;
+    }
+
+    function removeDictionaryItem(dictKey, value) {
+      const list = state[dictKey];
+      if (!Array.isArray(list)) return;
+      if (list.length <= 1 && (dictKey === 'employees' || dictKey === 'statuses' || dictKey === 'departments')) {
+        showToast('В этом справочнике должна остаться хотя бы одна запись', 'warning');
+        return;
+      }
+
+      state[dictKey] = list.filter(item => item !== value);
+      if (dictKey === 'suppliers') {
+        state.rawSuppliersSheet = null;
+        state.recentSuppliers = state.recentSuppliers.filter(x => x !== value);
+      }
+      if (dictKey === 'clients') {
+        state.rawClientsSheet = null;
+        state.recentClients = state.recentClients.filter(x => x !== value);
+      }
+      if (dictKey === 'employees' && state.selectedEmployee === value) {
+        state.selectedEmployee = state.employees[0] || '';
+      }
+
+      persistState();
+      refreshAllSelects();
+      updateDictStatusBadge();
+      renderDictionariesView();
+      showToast(`Удалено: «${value}»`, 'info');
+    }
+
+    function renderDictionariesView() {
+      const tabsEl = document.getElementById('dictTabsContainer');
+      const activeCfg = DICTIONARY_CONFIG.find(c => c.key === state.activeDictKey) || DICTIONARY_CONFIG[0];
+      state.activeDictKey = activeCfg.key;
+
+      tabsEl.innerHTML = DICTIONARY_CONFIG.map(cfg => {
+        const isActive = cfg.key === state.activeDictKey;
+        const count = (state[cfg.key] || []).length;
+        return `
+          <button type="button" data-dict-tab="${cfg.key}"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+              isActive
+                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+            }">
+            <span>${escapeHtml(cfg.label)}</span>
+            <span class="px-1.5 py-0.2 rounded-full text-[10px] ${isActive ? 'bg-blue-500 text-white' : 'bg-white text-slate-500'}">${count}</span>
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('dictNewItemInput').placeholder = activeCfg.placeholder;
+      document.getElementById('dictListHeaderTitle').textContent = activeCfg.label;
+
+      const query = document.getElementById('dictSearchInput').value.trim().toLowerCase();
+      const allItems = state[activeCfg.key] || [];
+      const filtered = query ? allItems.filter(item => item.toLowerCase().includes(query)) : allItems;
+
+      document.getElementById('dictListCount').textContent = query
+        ? `Найдено ${filtered.length} из ${allItems.length} шт.`
+        : `${allItems.length} шт.`;
+
+      const listEl = document.getElementById('dictItemsList');
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="px-4 py-8 text-center text-xs text-slate-400">Ничего не найдено. Добавьте новое значение через поле выше.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map((item, idx) => `
+        <div class="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/80 transition">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="text-[11px] font-mono text-slate-400 w-6 shrink-0">${idx + 1}.</span>
+            <span class="text-sm text-slate-800 truncate" title="${escapeHtml(item)}">${escapeHtml(item)}</span>
+          </div>
+          <button type="button" data-dict-del="${escapeHtml(item)}" title="Удалить из справочника"
+            class="px-2 py-1 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 text-xs font-medium transition shrink-0">
+            Удалить
+          </button>
+        </div>
+      `).join('');
+    }
+
+    // =========================================================================
+    // 7. БЫСТРЫЙ ПОИСК С «★ НЕДАВНИЕ» + ДОБАВЛЕНИЕ НОВОЙ ЗАПИСИ НА ЛЕТУ
+    // =========================================================================
+    function setupSearchableCombobox({ inputEl, dropdownEl, clearBtnEl, getItems, getRecents, onSelect, onCreateNew, clearInputOnSelect = false }) {
+      let activeIndex = -1;
+      let currentMatches = [];
+
+      function updateClearVisibility() {
+        if (!clearBtnEl) return;
+        clearBtnEl.classList.toggle('hidden', inputEl.value.trim().length === 0);
+      }
+
+      function renderDropdown(query) {
+        const items = getItems();
+        const recents = (getRecents ? getRecents() : []).filter(Boolean);
+        const rawQ = query.trim();
+        const q = rawQ.toLowerCase();
+        const LIMIT = 50;
+        let html = '';
+        currentMatches = [];
+
+        if (!q) {
+          if (recents.length > 0) {
+            html += `<div class="px-3 py-1.5 text-[11px] font-bold text-amber-600 bg-amber-50/70 border-b border-amber-100 sticky top-0">★ Недавние</div>`;
+            recents.forEach(r => {
+              const idx = currentMatches.length;
+              currentMatches.push(r);
+              html += `
+                <button type="button" data-idx="${idx}" class="combo-opt w-full text-left px-3 py-1.5 text-xs sm:text-sm text-slate-800 hover:bg-blue-50 hover:text-blue-700 transition block truncate">
+                  <span class="text-amber-500 mr-1">★</span>${escapeHtml(r)}
+                </button>
+              `;
+            });
+          }
+          const recentSet = new Set(recents);
+          const rest = [];
+          for (let i = 0; i < items.length && rest.length < LIMIT; i++) {
+            if (!recentSet.has(items[i])) rest.push(items[i]);
+          }
+          html += `<div class="px-3 py-1.5 text-[11px] font-medium text-slate-400 bg-slate-50 border-y border-slate-100">Справочник (${items.length} шт.) — начните ввод для поиска</div>`;
+          rest.forEach(item => {
+            const idx = currentMatches.length;
+            currentMatches.push(item);
+            html += `
+              <button type="button" data-idx="${idx}" class="combo-opt w-full text-left px-3 py-1.5 text-xs sm:text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition block truncate">
+                ${escapeHtml(item)}
+              </button>
+            `;
+          });
+        } else {
+          const seen = new Set();
+          for (const r of recents) {
+            if (r.toLowerCase().includes(q)) {
+              currentMatches.push(r);
+              seen.add(r);
+            }
+          }
+          for (let i = 0; i < items.length && currentMatches.length < LIMIT; i++) {
+            const item = items[i];
+            if (!seen.has(item) && item.toLowerCase().includes(q)) {
+              currentMatches.push(item);
+              seen.add(item);
+            }
+          }
+
+          const hasExactMatch = items.some(it => it.trim().toLowerCase() === q);
+
+          if (currentMatches.length > 0) {
+            html = `<div class="px-3 py-1 text-[11px] font-medium text-slate-400 bg-slate-50 border-b border-slate-100 sticky top-0">Показано ${currentMatches.length} (макс. ${LIMIT})</div>`;
+            currentMatches.forEach((item, idx) => {
+              const isRec = recents.includes(item);
+              html += `
+                <button type="button" data-idx="${idx}" class="combo-opt w-full text-left px-3 py-1.5 text-xs sm:text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition block truncate">
+                  ${isRec ? '<span class="text-amber-500 mr-1">★</span>' : ''}${escapeHtml(item)}
+                </button>
+              `;
+            });
+          } else {
+            html = `<div class="px-3 py-2 text-xs text-slate-400">Ничего не найдено в справочнике (${items.length} шт.)</div>`;
+          }
+
+          if (onCreateNew && rawQ && !hasExactMatch) {
+            html += `
+              <button type="button" data-create-val="${escapeHtml(rawQ)}" class="combo-create w-full text-left px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50/70 hover:bg-blue-100 border-t border-blue-100 transition block truncate">
+                + Добавить «${escapeHtml(rawQ)}» в справочник
+              </button>
+            `;
+          }
+        }
+
+        activeIndex = -1;
+        dropdownEl.innerHTML = html;
+        dropdownEl.classList.remove('hidden');
+      }
+
+      function selectItem(val) {
+        if (clearInputOnSelect) {
+          inputEl.value = '';
+        } else {
+          inputEl.value = val;
+        }
+        dropdownEl.classList.add('hidden');
+        updateClearVisibility();
+        if (onSelect) onSelect(val);
+      }
+
+      inputEl.addEventListener('focus', () => renderDropdown(inputEl.value));
+      inputEl.addEventListener('input', () => {
+        updateClearVisibility();
+        renderDropdown(inputEl.value);
+        if (!clearInputOnSelect && onSelect) onSelect(inputEl.value, true);
+      });
+
+      inputEl.addEventListener('keydown', (e) => {
+        if (dropdownEl.classList.contains('hidden')) return;
+        const opts = dropdownEl.querySelectorAll('.combo-opt');
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          activeIndex = Math.min(activeIndex + 1, opts.length - 1);
+          opts.forEach((opt, i) => {
+            opt.classList.toggle('bg-blue-50', i === activeIndex);
+            opt.classList.toggle('text-blue-700', i === activeIndex);
+            if (i === activeIndex) opt.scrollIntoView({ block: 'nearest' });
+          });
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          activeIndex = Math.max(activeIndex - 1, 0);
+          opts.forEach((opt, i) => {
+            opt.classList.toggle('bg-blue-50', i === activeIndex);
+            opt.classList.toggle('text-blue-700', i === activeIndex);
+            if (i === activeIndex) opt.scrollIntoView({ block: 'nearest' });
+          });
+        } else if (e.key === 'Enter' && activeIndex >= 0 && currentMatches[activeIndex]) {
+          e.preventDefault();
+          selectItem(currentMatches[activeIndex]);
+        } else if (e.key === 'Escape') {
+          dropdownEl.classList.add('hidden');
+        }
+      });
+
+      dropdownEl.addEventListener('mousedown', (e) => {
+        const createBtn = e.target.closest('.combo-create');
+        if (createBtn && onCreateNew) {
+          e.preventDefault();
+          const newVal = createBtn.dataset.createVal;
+          onCreateNew(newVal);
+          selectItem(newVal);
+          return;
+        }
+        const btn = e.target.closest('.combo-opt');
+        if (btn) {
+          e.preventDefault();
+          const idx = Number(btn.dataset.idx);
+          if (currentMatches[idx] !== undefined) selectItem(currentMatches[idx]);
+        }
+      });
+
+      if (clearBtnEl) {
+        clearBtnEl.addEventListener('click', () => {
+          inputEl.value = '';
+          updateClearVisibility();
+          inputEl.focus();
+          renderDropdown('');
+          if (onSelect) onSelect('', true);
+        });
+      }
+
+      document.addEventListener('click', (e) => {
+        if (!inputEl.contains(e.target) && !dropdownEl.contains(e.target) && (!clearBtnEl || !clearBtnEl.contains(e.target))) {
+          dropdownEl.classList.add('hidden');
+        }
+      });
+
+      return { updateClearVisibility };
+    }
+
+    // =========================================================================
+    // 8. МУЛЬТИВЫБОР ПОСТАВЩИКОВ В ФОРМЕ
+    // =========================================================================
+    function addSupplierChip(name) {
+      const clean = String(name || '').trim();
+      if (!clean) return;
+      const isEditing = Boolean(document.getElementById('editTaskId').value);
+      if (isEditing) {
+        state.selectedSuppliers = [clean];
+      } else if (!state.selectedSuppliers.includes(clean)) {
+        state.selectedSuppliers.push(clean);
+      }
+      renderSelectedSuppliersChips();
+      updateFormSmartHints();
+    }
+
+    function removeSupplierChip(name) {
+      state.selectedSuppliers = state.selectedSuppliers.filter(s => s !== name);
+      renderSelectedSuppliersChips();
+      updateFormSmartHints();
+    }
+
+    function renderSelectedSuppliersChips() {
+      const container = document.getElementById('selectedSuppliersChips');
+      const hint = document.getElementById('multiSupplierHint');
+      const submitText = document.getElementById('btnSubmitText');
+      const isEditing = Boolean(document.getElementById('editTaskId').value);
+
+      container.innerHTML = state.selectedSuppliers.map(sup => `
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-medium max-w-full">
+          <span class="truncate max-w-[260px]" title="${escapeHtml(sup)}">📦 ${escapeHtml(sup)}</span>
+          <button type="button" data-remove-sup="${escapeHtml(sup)}" class="text-indigo-400 hover:text-indigo-700 font-bold ml-0.5 leading-none">✕</button>
+        </span>
+      `).join('');
+
+      if (!isEditing && state.selectedSuppliers.length > 1) {
+        hint.textContent = `Будет создано задач: ${state.selectedSuppliers.length} шт.`;
+        hint.classList.remove('hidden');
+        submitText.textContent = `Добавить задачи (${state.selectedSuppliers.length} шт.)`;
+      } else {
+        hint.classList.add('hidden');
+        submitText.textContent = isEditing ? 'Сохранить изменения' : 'Добавить запись в трекер';
+      }
+    }
+
+    // =========================================================================
+    // 9. МИНИ-КАЛЕНДАРЬ НЕДЕЛИ
+    // =========================================================================
+    function getWeekDays(anchorIso) {
+      const dt = isoToDateObj(anchorIso || getTodayISO());
+      const dow = dt.getDay() === 0 ? 7 : dt.getDay();
+      const monday = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() - (dow - 1));
+      const names = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+        const cur = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+        const iso = dateObjToIso(cur);
+        const mins = state.tasks.filter(t => t.date === iso).reduce((s, t) => s + (Number(t.minutes) || 0), 0);
+        days.push({ iso, name: names[i], shortDate: isoToShortRuDate(iso), mins, isWeekend: i >= 5 });
+      }
+      return days;
+    }
+
+    function renderWeekCalendar() {
+      if (!state.weekAnchorIso) state.weekAnchorIso = getTodayISO();
+      const allDays = getWeekDays(state.weekAnchorIso);
+      const activeFilterDate = document.getElementById('filterDate').value;
+      const today = getTodayISO();
+
+      const visibleDays = allDays.filter(d => !d.isWeekend || d.mins > 0 || d.iso === activeFilterDate);
+      document.getElementById('weekRangeTitle').textContent = `${isoToShortRuDate(allDays[0].iso)} – ${isoToRuDate(allDays[6].iso)}`;
+
+      const strip = document.getElementById('weekCalendarStrip');
+      strip.className = `grid grid-cols-2 sm:grid-cols-${Math.min(visibleDays.length, 5)} lg:grid-cols-${visibleDays.length} gap-2`;
+
+      strip.innerHTML = visibleDays.map(d => {
+        const hours = d.mins / 60;
+        const isSelected = activeFilterDate === d.iso;
+        const isToday = d.iso === today;
+
+        let colorCls = 'bg-slate-50 border-slate-200 text-slate-600';
+        let dotCls = 'bg-slate-300';
+        if (hours >= 7.5) {
+          colorCls = 'bg-emerald-50/70 border-emerald-200 text-emerald-900';
+          dotCls = 'bg-emerald-500';
+        } else if (hours >= 5) {
+          colorCls = 'bg-amber-50/80 border-amber-200 text-amber-900';
+          dotCls = 'bg-amber-500';
+        } else if (hours > 0) {
+          colorCls = 'bg-rose-50/80 border-rose-200 text-rose-900';
+          dotCls = 'bg-rose-500';
+        }
+
+        const ringCls = isSelected ? 'ring-2 ring-blue-600 border-blue-500 shadow-xs' : 'hover:border-slate-300';
+
+        return `
+          <button type="button" data-week-day="${d.iso}"
+            class="week-day-btn text-left px-3 py-2 rounded-xl border transition ${colorCls} ${ringCls}">
+            <div class="flex items-center justify-between gap-1">
+              <span class="text-xs font-bold">${d.name} ${d.shortDate}</span>
+              <span class="w-2 h-2 rounded-full ${dotCls}"></span>
+            </div>
+            <div class="flex items-center justify-between mt-1">
+              <span class="text-xs font-mono font-semibold">${hours.toFixed(1)} ч</span>
+              ${isToday ? '<span class="text-[10px] font-semibold px-1.5 rounded bg-blue-100 text-blue-700">сегодня</span>' : ''}
+            </div>
+          </button>
+        `;
+      }).join('');
+    }
+
+    // =========================================================================
+    // 10. ПАНЕЛЬ «ОТКРЫТЫЕ ЗАДАЧИ»
+    // =========================================================================
+    function getGroupedOpenTasks() {
+      const groups = new Map();
+      const sorted = [...state.tasks].sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return (a.createdAt || 0) - (b.createdAt || 0);
+      });
+
+      for (const t of sorted) {
+        const key = t.taskNumber || t.id;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            taskNumber: key,
+            totalMins: 0,
+            entriesCount: 0,
+            latest: t
+          });
+        }
+        const g = groups.get(key);
+        g.totalMins += Number(t.minutes) || 0;
+        g.entriesCount += 1;
+        g.latest = t;
+      }
+
+      const openList = [];
+      for (const g of groups.values()) {
+        const st = (g.latest.status || '').trim();
+        if (st === 'В работе' || st === 'Ожидаем ответ') {
+          openList.push(g);
+        }
+      }
+      return openList.sort((a, b) => b.latest.date.localeCompare(a.latest.date));
+    }
+
+    function renderOpenTasksPanel() {
+      const panel = document.getElementById('openTasksPanel');
+      const body = document.getElementById('openTasksPanelBody');
+      const badge = document.getElementById('openTasksCountBadge');
+      const openList = getGroupedOpenTasks();
+
+      if (openList.length === 0) {
+        panel.classList.add('hidden');
+        return;
+      }
+
+      panel.classList.remove('hidden');
+      badge.textContent = openList.length;
+      body.classList.toggle('hidden', !state.openPanelExpanded);
+      document.getElementById('openPanelChevron').textContent = state.openPanelExpanded ? 'Свернуть ▴' : 'Развернуть ▾';
+
+      body.innerHTML = openList.map(g => {
+        const t = g.latest;
+        const st = (t.status || '').trim();
+        const stCls = st === 'Ожидаем ответ' ? 'bg-purple-100 text-purple-800' : 'bg-amber-100 text-amber-800';
+        return `
+          <div class="px-4 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-2 hover:bg-slate-50/70 transition">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="font-mono text-xs font-bold text-blue-700">${escapeHtml(g.taskNumber)}</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${stCls}">${escapeHtml(st)}</span>
+                <span class="text-[11px] text-slate-500">посл. ${isoToRuDate(t.date)} · всего <strong>${formatMinutesToHM(g.totalMins)}</strong>${g.entriesCount > 1 ? ` (${g.entriesCount} дн.)` : ''}</span>
+              </div>
+              <div class="text-xs text-slate-700 truncate mt-0.5" title="${escapeHtml(t.description)}">
+                ${t.client ? `<strong class="text-slate-900">${escapeHtml(t.client)}</strong> — ` : ''}${escapeHtml(t.description || t.stage)}
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button type="button" data-open-action="log" data-task-id="${t.id}"
+                class="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition">
+                + Списать время сегодня
+              </button>
+              <button type="button" data-open-action="close" data-task-id="${t.id}"
+                class="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold transition">
+                Закрыть → Готово
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // =========================================================================
+    // 11. УМНЫЕ ПОДСКАЗКИ И АУДИТ ПЕРЕД ВЫГРУЗКОЙ
+    // =========================================================================
+    function getTaskWarnings(task) {
+      const warnings = [];
+      const sup = Array.isArray(task.suppliers) ? task.suppliers.join('') : String(task.supplier || '').trim();
+      const desc = String(task.description || '').toLowerCase();
+
+      if (task.interaction === 'ПОСТАВЩИК' && !sup) {
+        warnings.push('Выбрано взаимодействие «ПОСТАВЩИК», но не указан сам поставщик.');
+      }
+      if (task.stage === 'Мониторинг закупок' && !String(task.docLink || '').trim()) {
+        warnings.push('Для «Мониторинг закупок» не указан № закупки / ссылка.');
+      }
+      if (task.result === 'Коммерческое предложение' && desc.includes('запрос')) {
+        warnings.push('Результат «Коммерческое предложение», но в описании указан «запрос» (возможно, лучше «Запрос уточнений»).');
+      }
+      if (task.interaction === 'ПОСТАВЩИК' && desc.includes('отдел продаж') && desc.includes('информирован')) {
+        warnings.push('В описании указано информирование отдела продаж, но выбран контрагент «ПОСТАВЩИК».');
+      }
+      return warnings;
+    }
+
+    function updateFormSmartHints() {
+      const box = document.getElementById('smartHintsBox');
+      const typedSup = document.getElementById('fieldSupplier').value.trim();
+      const hasSup = state.selectedSuppliers.length > 0 || Boolean(typedSup);
+      const draft = {
+        interaction: document.getElementById('fieldInteraction').value,
+        supplier: hasSup ? 'ok' : '',
+        stage: document.getElementById('fieldStage').value,
+        docLink: document.getElementById('fieldDocLink').value,
+        result: document.getElementById('fieldResult').value,
+        description: document.getElementById('fieldDescription').value
+      };
+      const warnings = getTaskWarnings(draft);
+      if (warnings.length === 0) {
+        box.classList.add('hidden');
+        box.innerHTML = '';
+      } else {
+        box.classList.remove('hidden');
+        box.innerHTML = warnings.map(w => `
+          <div class="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+            <span class="shrink-0">⚠️</span>
+            <span>${escapeHtml(w)}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    function runAudit() {
+      const minsByDay = new Map();
+      for (const t of state.tasks) {
+        if (!t.date) continue;
+        minsByDay.set(t.date, (minsByDay.get(t.date) || 0) + (Number(t.minutes) || 0));
+      }
+      const lowHoursDays = [];
+      for (const [date, mins] of minsByDay.entries()) {
+        if (mins > 0 && mins < 450) {
+          lowHoursDays.push({ date, mins });
+        }
+      }
+      lowHoursDays.sort((a, b) => b.date.localeCompare(a.date));
+
+      const missingSupplier = state.tasks.filter(t => t.interaction === 'ПОСТАВЩИК' && !String(t.supplier || '').trim());
+      const monitoringNoLink = state.tasks.filter(t => t.stage === 'Мониторинг закупок' && !String(t.docLink || '').trim());
+
+      const logicalMismatches = [];
+      for (const t of state.tasks) {
+        const desc = String(t.description || '').toLowerCase();
+        if (t.result === 'Коммерческое предложение' && desc.includes('запрос')) {
+          logicalMismatches.push({ task: t, reason: 'Результат «КП», но в описании «запрос»' });
+        } else if (t.interaction === 'ПОСТАВЩИК' && desc.includes('отдел продаж') && (desc.includes('информирован') || desc.includes('менеджер'))) {
+          logicalMismatches.push({ task: t, reason: 'В описании отдел продаж, но выбран «ПОСТАВЩИК»' });
+        }
+      }
+
+      let chronologyBroken = false;
+      for (let i = 1; i < state.tasks.length; i++) {
+        if (state.tasks[i].date && state.tasks[i - 1].date && state.tasks[i].date < state.tasks[i - 1].date) {
+          chronologyBroken = true;
+          break;
+        }
+      }
+
+      const totalIssues =
+        lowHoursDays.length +
+        missingSupplier.length +
+        monitoringNoLink.length +
+        logicalMismatches.length +
+        (chronologyBroken ? 1 : 0);
+
+      return { lowHoursDays, missingSupplier, monitoringNoLink, logicalMismatches, chronologyBroken, totalIssues };
+    }
+
+    function updateAuditBadge() {
+      const { totalIssues } = runAudit();
+      const badge = document.getElementById('auditCountBadge');
+      badge.textContent = totalIssues;
+      if (totalIssues === 0) {
+        badge.className = 'px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700';
+      } else {
+        badge.className = 'px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800';
+      }
+    }
+
+    function renderAuditModal() {
+      const audit = runAudit();
+      const body = document.getElementById('auditModalBody');
+
+      if (audit.totalIssues === 0) {
+        body.innerHTML = `
+          <div class="py-8 text-center">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3 text-xl">✓</div>
+            <p class="text-sm font-bold text-slate-800">Замечаний не найдено!</p>
+            <p class="text-xs text-slate-500 mt-1">Трекер заполнен аккуратно и готов к выгрузке для руководства.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const blocks = [];
+
+      if (audit.lowHoursDays.length > 0) {
+        blocks.push(`
+          <div class="rounded-xl border border-rose-200 bg-rose-50/50 p-3.5">
+            <div class="text-xs font-bold text-rose-800 mb-2">1. Дни с неполным учётом времени (&lt; 7,5 ч) — ${audit.lowHoursDays.length}</div>
+            <div class="flex flex-wrap gap-1.5">
+              ${audit.lowHoursDays.map(d => `
+                <button type="button" data-audit-day="${d.date}" class="px-2.5 py-1.5 rounded-lg bg-white border border-rose-200 hover:bg-rose-100 text-xs font-medium text-rose-900 transition">
+                  ${isoToRuDate(d.date)} · <strong>${(d.mins / 60).toFixed(2)} ч</strong> (${formatMinutesToHM(d.mins)})
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `);
+      }
+
+      if (audit.missingSupplier.length > 0) {
+        blocks.push(`
+          <div class="rounded-xl border border-amber-200 bg-amber-50/50 p-3.5">
+            <div class="text-xs font-bold text-amber-900 mb-2">2. Взаимодействие «ПОСТАВЩИК» без указания поставщика — ${audit.missingSupplier.length}</div>
+            <div class="space-y-1 max-h-36 overflow-y-auto">
+              ${audit.missingSupplier.map(t => `
+                <button type="button" data-audit-task="${t.id}" class="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-amber-200/80 hover:bg-amber-100/70 text-xs flex items-center justify-between gap-2 transition">
+                  <span class="truncate"><strong class="font-mono text-blue-700">${escapeHtml(t.taskNumber)}</strong> (${isoToRuDate(t.date)}) — ${escapeHtml(t.description)}</span>
+                  <span class="text-amber-700 font-semibold shrink-0">Исправить →</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `);
+      }
+
+      if (audit.monitoringNoLink.length > 0) {
+        blocks.push(`
+          <div class="rounded-xl border border-blue-200 bg-blue-50/40 p-3.5">
+            <div class="text-xs font-bold text-blue-900 mb-2">3. Мониторинг закупок без № закупки / ссылки — ${audit.monitoringNoLink.length}</div>
+            <div class="space-y-1 max-h-40 overflow-y-auto">
+              ${audit.monitoringNoLink.map(t => `
+                <button type="button" data-audit-task="${t.id}" class="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-blue-200/80 hover:bg-blue-100/60 text-xs flex items-center justify-between gap-2 transition">
+                  <span class="truncate"><strong class="font-mono text-blue-700">${escapeHtml(t.taskNumber)}</strong> · ${escapeHtml(t.client || 'Без клиента')}</span>
+                  <span class="text-blue-700 font-semibold shrink-0">Указать № →</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `);
+      }
+
+      if (audit.logicalMismatches.length > 0) {
+        blocks.push(`
+          <div class="rounded-xl border border-purple-200 bg-purple-50/50 p-3.5">
+            <div class="text-xs font-bold text-purple-900 mb-2">4. Возможные логические несостыковки — ${audit.logicalMismatches.length}</div>
+            <div class="space-y-1 max-h-36 overflow-y-auto">
+              ${audit.logicalMismatches.map(item => `
+                <button type="button" data-audit-task="${item.task.id}" class="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-purple-200/80 hover:bg-purple-100/60 text-xs flex items-center justify-between gap-2 transition">
+                  <span class="truncate"><strong class="font-mono text-blue-700">${escapeHtml(item.task.taskNumber)}</strong> — ${escapeHtml(item.reason)}</span>
+                  <span class="text-purple-700 font-semibold shrink-0">Проверить →</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `);
+      }
+
+      if (audit.chronologyBroken) {
+        blocks.push(`
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div class="text-xs font-bold text-slate-800">5. Нарушение хронологии дат в списке записей</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">Некоторые более ранние записи расположены после более поздних.</div>
+            </div>
+            <button type="button" id="btnAuditSortByDate" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shrink-0 transition">
+              Отсортировать таблицу по дате
+            </button>
+          </div>
+        `);
+      }
+
+      body.innerHTML = blocks.join('');
+    }
+
+    // =========================================================================
+    // 12. ПРОГРЕСС-БАР РАБОЧЕГО ДНЯ
+    // =========================================================================
+    function updateDailyProgress() {
+      const activeDate = document.getElementById('fieldDate').value || getTodayISO();
+      const dayMins = state.tasks
+        .filter(t => t.date === activeDate)
+        .reduce((sum, t) => sum + (Number(t.minutes) || 0), 0);
+
+      const pct = Math.min(100, Math.round((dayMins / 480) * 100));
+      const rawPct = Math.round((dayMins / 480) * 100);
+
+      document.getElementById('dailyProgressLabel').textContent = `За ${isoToRuDate(activeDate)}: ${formatMinutesToHM(dayMins)} / 8 ч`;
+      const pctEl = document.getElementById('dailyProgressPct');
+      const barEl = document.getElementById('dailyProgressBar');
+
+      pctEl.textContent = `${rawPct}%`;
+      barEl.style.width = `${pct}%`;
+
+      barEl.classList.remove('bg-amber-500', 'bg-blue-600', 'bg-emerald-500');
+      pctEl.classList.remove('text-amber-600', 'text-blue-600', 'text-emerald-600');
+
+      if (dayMins >= 450) {
+        barEl.classList.add('bg-emerald-500');
+        pctEl.classList.add('text-emerald-600');
+      } else if (dayMins >= 300) {
+        barEl.classList.add('bg-blue-600');
+        pctEl.classList.add('text-blue-600');
+      } else {
+        barEl.classList.add('bg-amber-500');
+        pctEl.classList.add('text-amber-600');
+      }
+    }
+
+    // =========================================================================
+    // 13. ТАБЛИЦА ЗАДАЧ
+    // =========================================================================
+    function getStatusBadgeClass(status) {
+      const s = (status || '').trim();
+      if (s === 'Готово') return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      if (s === 'В работе') return 'bg-amber-100 text-amber-800 border-amber-200';
+      if (s === 'Передано') return 'bg-blue-100 text-blue-800 border-blue-200';
+      if (s === 'Ожидаем ответ') return 'bg-purple-100 text-purple-800 border-purple-200';
+      if (s === 'Отменено') return 'bg-slate-200 text-slate-600 border-slate-300';
+      return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+
+    function renderTasksTable() {
+      const tbody = document.getElementById('tasksTableBody');
+      const emptyState = document.getElementById('emptyTasksState');
+      const filterDate = document.getElementById('filterDate').value;
+      const filterStatus = document.getElementById('filterStatus').value;
+      const filterStage = document.getElementById('filterStage').value;
+      const filterSearch = document.getElementById('filterSearch').value.trim().toLowerCase();
+
+      let filtered = state.tasks.filter(t => {
+        if (filterDate && t.date !== filterDate) return false;
+        if (filterStatus && t.status !== filterStatus) return false;
+        if (filterStage && t.stage !== filterStage) return false;
+        if (filterSearch) {
+          const hay = [
+            t.taskNumber, t.supplier, t.client, t.deal,
+            t.product, t.interaction, t.stage, t.description,
+            t.result, t.waiting, t.docLink
+          ].join(' ').toLowerCase();
+          if (!hay.includes(filterSearch)) return false;
+        }
+        return true;
+      });
+
+      filtered = [...filtered].sort((a, b) => {
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        const numA = parseInt((a.taskNumber || '').split('_')[1], 10) || 0;
+        const numB = parseInt((b.taskNumber || '').split('_')[1], 10) || 0;
+        if (numA !== numB) return numB - numA;
+        return (b.createdAt || 0) - (a.createdAt || 0);
+      });
+
+      const totalMins = filtered.reduce((sum, t) => sum + (Number(t.minutes) || 0), 0);
+      document.getElementById('tasksCountBadge').textContent = `${filtered.length} шт.`;
+      document.getElementById('filteredHoursBadge').textContent = formatMinutesToHM(totalMins);
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      tbody.innerHTML = filtered.map(t => {
+        const warnings = getTaskWarnings(t);
+        const isDone = (t.status || '').trim() === 'Готово';
+        const warnBadge = warnings.length > 0
+          ? `<span title="${escapeHtml(warnings.join(' '))}" class="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold cursor-help">⚠ Проверить</span>`
+          : '';
+
+        const docLinkHtml = t.docLink
+          ? (/^https?:\/\//i.test(t.docLink)
+              ? `<a href="${escapeHtml(t.docLink)}" target="_blank" rel="noopener" class="text-[11px] text-blue-600 hover:underline break-all">🔗 ${escapeHtml(t.docLink)}</a>`
+              : `<span class="text-[11px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-mono">№ ${escapeHtml(t.docLink)}</span>`)
+          : '';
+
+        return `
+          <tr class="hover:bg-slate-50/90 transition align-top">
+            <td class="py-2.5 px-3 whitespace-nowrap">
+              <div class="font-semibold text-slate-800 text-xs">${escapeHtml(isoToRuDate(t.date))}</div>
+              <div class="font-mono text-[11px] text-slate-500 mt-0.5">${escapeHtml(t.taskNumber)}</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">${escapeHtml(t.employee)}</div>
+              ${warnBadge ? `<div class="mt-1">${warnBadge}</div>` : ''}
+            </td>
+
+            <td class="py-2.5 px-3">
+              ${t.client ? `<div class="text-xs font-semibold text-slate-800 line-clamp-2" title="${escapeHtml(t.client)}">🏢 ${escapeHtml(t.client)}</div>` : ''}
+              ${t.supplier ? `<div class="text-xs text-indigo-700 mt-0.5 line-clamp-1" title="${escapeHtml(t.supplier)}">📦 ${escapeHtml(t.supplier)}</div>` : ''}
+              <div class="flex flex-wrap items-center gap-1 mt-1">
+                ${t.product ? `<span class="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[11px] font-medium">${escapeHtml(t.product)}</span>` : ''}
+                ${t.deal ? `<span class="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[11px]">${escapeHtml(t.deal)}</span>` : ''}
+              </div>
+            </td>
+
+            <td class="py-2.5 px-3">
+              <div class="text-xs font-semibold text-slate-700">${escapeHtml(t.stage)}</div>
+              <div class="text-xs text-slate-600 mt-0.5 leading-relaxed">${escapeHtml(t.description)}</div>
+              <div class="flex flex-wrap items-center gap-2 mt-1">
+                <span class="text-[11px] text-slate-500">Результат: <strong class="text-slate-700 font-medium">${escapeHtml(t.result)}</strong></span>
+                ${docLinkHtml}
+              </div>
+            </td>
+
+            <td class="py-2.5 px-3 whitespace-nowrap">
+              <div class="text-xs font-bold text-slate-800">${Number(t.minutes) || 0} мин</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">${Number(t.qty) || 0} шт.</div>
+            </td>
+
+            <td class="py-2.5 px-3 whitespace-nowrap">
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${getStatusBadgeClass(t.status)}">
+                ${escapeHtml((t.status || '').trim())}
+              </span>
+              <div class="text-[11px] text-slate-500 mt-1">С кем: <span class="text-slate-700 font-medium">${escapeHtml(t.interaction)}</span></div>
+              ${t.waiting ? `<div class="text-[11px] text-slate-400">Ждёт: ${escapeHtml(t.waiting)}</div>` : ''}
+            </td>
+
+            <td class="py-2.5 px-3 text-right whitespace-nowrap">
+              <div class="inline-flex items-center gap-0.5">
+                ${!isDone ? `<button type="button" data-action="done" data-id="${t.id}" title="Отметить «Готово»" class="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition">✓</button>` : ''}
+                <button type="button" data-action="edit" data-id="${t.id}" title="Редактировать" class="p-1.5 rounded-lg hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition">✏️</button>
+                <button type="button" data-action="duplicate" data-id="${t.id}" title="Дублировать (с новым №)" class="p-1.5 rounded-lg hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 transition">📋</button>
+                <button type="button" data-action="delete" data-id="${t.id}" title="Удалить" class="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition">🗑️</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // =========================================================================
+    // 14. ФОРМА, ШАБЛОНЫ И ТАЙМЕР
+    // =========================================================================
+    let supplierComboApi = null;
+    let clientComboApi = null;
+
+    function populateSelect(el, list, defaultVal = '', includeEmpty = false) {
+      el.innerHTML = '';
+      if (includeEmpty) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '— не выбрано —';
+        el.appendChild(opt);
+      }
+      list.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item;
+        opt.textContent = item;
+        el.appendChild(opt);
+      });
+      if (defaultVal && list.includes(defaultVal)) el.value = defaultVal;
+    }
+
+    function refreshAllSelects() {
+      populateSelect(document.getElementById('globalEmployeeSelect'), state.employees, state.selectedEmployee);
+      populateSelect(document.getElementById('fieldProduct'), state.products, document.getElementById('fieldProduct').value || state.products[0]);
+      populateSelect(document.getElementById('fieldInteraction'), state.departments, document.getElementById('fieldInteraction').value || 'Без взаимодействия');
+      populateSelect(document.getElementById('fieldStage'), state.stages, document.getElementById('fieldStage').value || state.stages[0]);
+      populateSelect(document.getElementById('fieldResult'), state.results, document.getElementById('fieldResult').value || 'Иной результат');
+      populateSelect(document.getElementById('fieldStatus'), state.statuses, document.getElementById('fieldStatus').value || 'Готово');
+      populateSelect(document.getElementById('fieldWaiting'), state.departments, document.getElementById('fieldWaiting').value || 'Отдел продаж', true);
+
+      const fs = document.getElementById('filterStatus');
+      const prevSt = fs.value;
+      fs.innerHTML = '<option value="">Все статусы</option>' + state.statuses.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s.trim())}</option>`).join('');
+      fs.value = prevSt;
+
+      const fst = document.getElementById('filterStage');
+      const prevStage = fst.value;
+      fst.innerHTML = '<option value="">Все этапы</option>' + state.stages.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s.trim())}</option>`).join('');
+      fst.value = prevStage;
+
+      populateSelect(document.getElementById('batchProduct'), state.products, state.products[0]);
+      populateSelect(document.getElementById('batchWaiting'), state.departments, 'Тендерный отдел', true);
+      populateSelect(document.getElementById('batchStatus'), state.statuses, 'Готово');
+    }
+
+    function updateDictStatusBadge() {
+      document.getElementById('dictStatusBadge').innerHTML = `
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        База: ${state.suppliers.length} поставщиков, ${state.clients.length} клиентов
+      `;
+    }
+
+    function resetForm(keepDate = true) {
+      const prevDate = document.getElementById('fieldDate').value || getTodayISO();
+      document.getElementById('editTaskId').value = '';
+      document.getElementById('formTitle').textContent = 'Новая запись';
+      document.getElementById('editingBadge').classList.add('hidden');
+      document.getElementById('btnCancelEdit').classList.add('hidden');
+      document.getElementById('taskFormCard').classList.remove('ring-2', 'ring-amber-300');
+
+      const dateVal = keepDate ? prevDate : getTodayISO();
+      document.getElementById('fieldDate').value = dateVal;
+      document.getElementById('fieldTaskNumber').value = computeNextTaskNumber(dateVal);
+      document.getElementById('fieldProduct').value = state.products[0] || '';
+      document.getElementById('fieldDeal').value = '';
+      document.getElementById('fieldSupplier').value = '';
+      state.selectedSuppliers = [];
+      renderSelectedSuppliersChips();
+      document.getElementById('fieldClient').value = '';
+      document.getElementById('fieldInteraction').value = state.departments.includes('Без взаимодействия') ? 'Без взаимодействия' : (state.departments[0] || '');
+      document.getElementById('fieldStage').value = state.stages[0] || '';
+      document.getElementById('fieldResult').value = state.results.includes('Иной результат') ? 'Иной результат' : (state.results[0] || '');
+      document.getElementById('fieldDescription').value = '';
+      document.getElementById('fieldQty').value = 1;
+      document.getElementById('fieldMinutes').value = 15;
+      document.getElementById('fieldStatus').value = state.statuses.includes('Готово') ? 'Готово' : (state.statuses[0] || '');
+      document.getElementById('fieldWaiting').value = state.departments.includes('Отдел продаж') ? 'Отдел продаж' : '';
+      document.getElementById('fieldDocLink').value = '';
+
+      if (supplierComboApi) supplierComboApi.updateClearVisibility();
+      if (clientComboApi) clientComboApi.updateClearVisibility();
+      updateFormSmartHints();
+      updateDailyProgress();
+    }
+
+    function fillFormFromTask(task, mode = 'edit') {
+      const today = getTodayISO();
+      const targetDate = document.getElementById('filterDate').value || today;
+
+      if (mode === 'edit') {
+        document.getElementById('editTaskId').value = task.id;
+        document.getElementById('formTitle').textContent = `Редактирование ${task.taskNumber}`;
+        document.getElementById('editingBadge').classList.remove('hidden');
+        document.getElementById('btnCancelEdit').classList.remove('hidden');
+        document.getElementById('taskFormCard').classList.add('ring-2', 'ring-amber-300');
+        document.getElementById('fieldDate').value = task.date;
+        document.getElementById('fieldTaskNumber').value = task.taskNumber;
+      } else if (mode === 'duplicate') {
+        document.getElementById('editTaskId').value = '';
+        document.getElementById('formTitle').textContent = 'Дублирование записи';
+        document.getElementById('editingBadge').classList.add('hidden');
+        document.getElementById('btnCancelEdit').classList.add('hidden');
+        document.getElementById('taskFormCard').classList.remove('ring-2', 'ring-amber-300');
+        const d = document.getElementById('fieldDate').value || today;
+        document.getElementById('fieldDate').value = d;
+        document.getElementById('fieldTaskNumber').value = computeNextTaskNumber(d);
+      } else if (mode === 'continue') {
+        document.getElementById('editTaskId').value = '';
+        document.getElementById('formTitle').textContent = `Списание времени по задаче ${task.taskNumber}`;
+        document.getElementById('editingBadge').classList.add('hidden');
+        document.getElementById('btnCancelEdit').classList.add('hidden');
+        document.getElementById('taskFormCard').classList.remove('ring-2', 'ring-amber-300');
+        document.getElementById('fieldDate').value = targetDate;
+        document.getElementById('fieldTaskNumber').value = task.taskNumber;
+      }
+
+      document.getElementById('fieldProduct').value = state.products.includes(task.product) ? task.product : (state.products[0] || '');
+      document.getElementById('fieldDeal').value = task.deal || '';
+      document.getElementById('fieldSupplier').value = '';
+      state.selectedSuppliers = task.supplier ? [task.supplier] : [];
+      renderSelectedSuppliersChips();
+      document.getElementById('fieldClient').value = task.client || '';
+      document.getElementById('fieldInteraction').value = state.departments.includes(task.interaction) ? task.interaction : (state.departments[0] || '');
+      document.getElementById('fieldStage').value = state.stages.includes(task.stage) ? task.stage : (state.stages[0] || '');
+      document.getElementById('fieldResult').value = state.results.includes(task.result) ? task.result : (state.results[0] || '');
+      document.getElementById('fieldDescription').value = task.description || '';
+      document.getElementById('fieldQty').value = task.qty ?? 1;
+      document.getElementById('fieldMinutes').value = task.minutes ?? 15;
+      document.getElementById('fieldStatus').value = state.statuses.includes(task.status) ? task.status : (state.statuses[0] || '');
+      document.getElementById('fieldWaiting').value = state.departments.includes(task.waiting) ? task.waiting : '';
+      document.getElementById('fieldDocLink').value = task.docLink || '';
+
+      if (supplierComboApi) supplierComboApi.updateClearVisibility();
+      if (clientComboApi) clientComboApi.updateClearVisibility();
+      updateFormSmartHints();
+      updateDailyProgress();
+
+      document.getElementById('taskFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (mode === 'continue') {
+        setTimeout(() => {
+          const minEl = document.getElementById('fieldMinutes');
+          minEl.focus();
+          minEl.select();
+        }, 300);
+      }
+    }
+
+    function applyPreset(key) {
+      const p = QUICK_PRESETS[key];
+      if (!p) return;
+      if (document.getElementById('editTaskId').value) resetForm(true);
+      if (p.client !== undefined) document.getElementById('fieldClient').value = p.client;
+      if (p.interaction !== undefined && state.departments.includes(p.interaction)) document.getElementById('fieldInteraction').value = p.interaction;
+      if (p.stage !== undefined && state.stages.includes(p.stage)) document.getElementById('fieldStage').value = p.stage;
+      if (p.description !== undefined) document.getElementById('fieldDescription').value = p.description;
+      if (p.result !== undefined && state.results.includes(p.result)) document.getElementById('fieldResult').value = p.result;
+      if (p.minutes !== undefined) document.getElementById('fieldMinutes').value = p.minutes;
+      if (p.status !== undefined && state.statuses.includes(p.status)) document.getElementById('fieldStatus').value = p.status;
+      if (p.waiting !== undefined && state.departments.includes(p.waiting)) document.getElementById('fieldWaiting').value = p.waiting;
+
+      if (clientComboApi) clientComboApi.updateClearVisibility();
+      updateFormSmartHints();
+      showToast('Шаблон применён', 'info');
+    }
+
+    function getTimerTotalSeconds() {
+      return state.timerAccumulatedSec + (state.timerRunning ? Math.floor((Date.now() - state.timerStartMs) / 1000) : 0);
+    }
+
+    function updateTimerUi() {
+      const sec = getTimerTotalSeconds();
+      const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+      const ss = String(sec % 60).padStart(2, '0');
+      document.getElementById('timerDisplay').textContent = `${mm}:${ss}`;
+      document.getElementById('btnTimerPlayPause').textContent = state.timerRunning ? '⏸' : '▶';
+      const dot = document.getElementById('timerDot');
+      dot.classList.toggle('bg-rose-500', state.timerRunning);
+      dot.classList.toggle('animate-pulse-soft', state.timerRunning);
+      dot.classList.toggle('bg-slate-400', !state.timerRunning);
+      document.getElementById('btnTimerApply').classList.toggle('hidden', sec === 0);
+    }
+
+    function toggleTimerPlayPause() {
+      if (!state.timerRunning) {
+        state.timerRunning = true;
+        state.timerStartMs = Date.now();
+        state.timerInterval = setInterval(updateTimerUi, 500);
+      } else {
+        state.timerAccumulatedSec += Math.floor((Date.now() - state.timerStartMs) / 1000);
+        state.timerRunning = false;
+        clearInterval(state.timerInterval);
+      }
+      updateTimerUi();
+    }
+
+    function resetTimer() {
+      clearInterval(state.timerInterval);
+      state.timerRunning = false;
+      state.timerAccumulatedSec = 0;
+      state.timerStartMs = 0;
+      updateTimerUi();
+    }
+
+    function applyTimerToMinutes() {
+      const sec = getTimerTotalSeconds();
+      if (sec <= 0) return;
+      const mins = Math.max(1, Math.ceil(sec / 60));
+      document.getElementById('fieldMinutes').value = mins;
+      resetTimer();
+      showToast(`В поле времени записано ${mins} мин`, 'success');
+    }
+
+    // =========================================================================
+    // 15. ПАКЕТНЫЙ МОНИТОРИНГ ЗАКУПОК
+    // =========================================================================
+    const DEFAULT_MONITORING_DESC = 'Мониторинг закупок: проверка текущих лотов, фиксация статусов и ключевых условий';
+
+    function createBatchRowElement() {
+      const row = document.createElement('div');
+      row.className = 'batch-row grid grid-cols-1 md:grid-cols-12 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 items-start';
+      row.innerHTML = `
+        <div class="md:col-span-4 relative">
+          <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">Клиент / заказчик</label>
+          <input type="text" class="batch-client w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500" placeholder="Поиск или ввод клиента..." />
+          <div class="batch-client-dd hidden absolute left-0 right-0 top-full mt-1 z-40 bg-white border border-slate-200 rounded-xl shadow-lg combobox-list"></div>
+        </div>
+        <div class="md:col-span-3">
+          <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">№ закупки / Ссылка</label>
+          <input type="text" class="batch-link w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-mono text-slate-800 outline-none focus:border-blue-500" placeholder="03722000..." />
+        </div>
+        <div class="md:col-span-4">
+          <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">Краткий итог</label>
+          <input type="text" class="batch-desc w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500" value="${escapeHtml(DEFAULT_MONITORING_DESC)}" />
+          <div class="flex flex-wrap gap-1 mt-1">
+            <button type="button" data-append="подходит" class="batch-tag px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-medium transition">+ подходит</button>
+            <button type="button" data-append="не наш профиль" class="batch-tag px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-medium transition">+ не наш профиль</button>
+            <button type="button" data-append="передано в работу" class="batch-tag px-1.5 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-medium transition">+ передано в работу</button>
+          </div>
+        </div>
+        <div class="md:col-span-1 flex md:justify-end md:pt-5">
+          <button type="button" class="batch-del-row p-1.5 rounded-lg hover:bg-rose-100 text-slate-400 hover:text-rose-600 text-xs transition" title="Удалить строку">🗑️</button>
+        </div>
+      `;
+
+      const clientInput = row.querySelector('.batch-client');
+      const clientDd = row.querySelector('.batch-client-dd');
+      setupSearchableCombobox({
+        inputEl: clientInput,
+        dropdownEl: clientDd,
+        getItems: () => state.clients,
+        getRecents: () => state.recentClients,
+        onCreateNew: (val) => addDictionaryItem('clients', val),
+        onSelect: () => updateBatchCounter()
+      });
+
+      row.querySelector('.batch-link').addEventListener('input', updateBatchCounter);
+      row.querySelector('.batch-desc').addEventListener('input', updateBatchCounter);
+      row.querySelectorAll('.batch-tag').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const inp = row.querySelector('.batch-desc');
+          const tag = btn.dataset.append;
+          if (!inp.value.toLowerCase().includes(tag)) {
+            inp.value = inp.value.trim().replace(/\.$/, '') + ` — ${tag}`;
+          }
+          updateBatchCounter();
+        });
+      });
+      row.querySelector('.batch-del-row').addEventListener('click', () => {
+        row.remove();
+        updateBatchCounter();
+      });
+
+      return row;
+    }
+
+    function getFilledBatchRows() {
+      const rows = Array.from(document.querySelectorAll('#batchRowsContainer .batch-row'));
+      return rows.map(r => ({
+        client: r.querySelector('.batch-client').value.trim(),
+        docLink: r.querySelector('.batch-link').value.trim(),
+        description: r.querySelector('.batch-desc').value.trim()
+      })).filter(r => r.client || r.docLink);
+    }
+
+    function updateBatchCounter() {
+      const filled = getFilledBatchRows().length;
+      const mins = Number(document.getElementById('batchMinutes').value) || 10;
+      document.getElementById('batchSummaryInfo').textContent = `Заполнено строк: ${filled} (итого ${formatMinutesToHM(filled * mins)})`;
+      document.getElementById('btnSaveBatchRows').textContent = `Добавить все (${filled})`;
+    }
+
+    function openBatchModal() {
+      const activeDate = document.getElementById('fieldDate').value || getTodayISO();
+      document.getElementById('batchDate').value = activeDate;
+      const container = document.getElementById('batchRowsContainer');
+      container.innerHTML = '';
+      for (let i = 0; i < 3; i++) container.appendChild(createBatchRowElement());
+      updateBatchCounter();
+      document.getElementById('batchModal').classList.remove('hidden');
+    }
+
+    function saveBatchMonitoring() {
+      const filled = getFilledBatchRows();
+      if (filled.length === 0) {
+        showToast('Заполните хотя бы одну строку (Клиент или № закупки)', 'warning');
+        return;
+      }
+
+      pushHistory(`пакетный мониторинг (${filled.length} шт.)`);
+
+      const date = document.getElementById('batchDate').value || getTodayISO();
+      const product = document.getElementById('batchProduct').value;
+      const minutes = Number(document.getElementById('batchMinutes').value) || 10;
+      const waiting = document.getElementById('batchWaiting').value;
+      const status = document.getElementById('batchStatus').value;
+
+      filled.forEach((item, idx) => {
+        const taskNum = computeNextTaskNumber(date, 0);
+        if (item.client) {
+          recordRecent('recentClients', item.client);
+          addDictionaryItem('clients', item.client, true);
+        }
+        state.tasks.push({
+          id: generateUid(),
+          taskNumber: taskNum,
+          date,
+          employee: state.selectedEmployee,
+          supplier: '',
+          client: item.client,
+          deal: '',
+          product,
+          interaction: 'Без взаимодействия',
+          stage: 'Мониторинг закупок',
+          description: item.description || DEFAULT_MONITORING_DESC,
+          result: 'Иной результат',
+          qty: 1,
+          minutes,
+          status,
+          waiting,
+          docLink: item.docLink,
+          createdAt: Date.now() + idx
+        });
+      });
+
+      persistState();
+      document.getElementById('batchModal').classList.add('hidden');
+      document.getElementById('fieldDate').value = date;
+      document.getElementById('fieldTaskNumber').value = computeNextTaskNumber(date);
+      state.weekAnchorIso = date;
+      refreshAllViews();
+      showToast(`Добавлено ${filled.length} записей мониторинга`, 'success');
+    }
+
+    // =========================================================================
+    // 16. УМНАЯ СВОДКА РУКОВОДИТЕЛЯ
+    // =========================================================================
+    function getPeriodRange(refIso, period) {
+      const [y, m, d] = refIso.split('-').map(Number);
+      const refDate = new Date(y, m - 1, d);
+      if (period === 'day') {
+        return { start: refIso, end: refIso, label: `За день (${isoToRuDate(refIso)})` };
+      }
+      if (period === 'week') {
+        const dow = refDate.getDay() === 0 ? 7 : refDate.getDay();
+        const mon = new Date(y, m - 1, d - (dow - 1));
+        const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+        return {
+          start: dateObjToIso(mon),
+          end: dateObjToIso(sun),
+          label: `За неделю (${isoToRuDate(dateObjToIso(mon))} – ${isoToRuDate(dateObjToIso(sun))})`
+        };
+      }
+      const first = new Date(y, m - 1, 1);
+      const last = new Date(y, m, 0);
+      return {
+        start: dateObjToIso(first),
+        end: dateObjToIso(last),
+        label: `За месяц (${isoToRuDate(dateObjToIso(first))} – ${isoToRuDate(dateObjToIso(last))})`
+      };
+    }
+
+    function getLatestWorkdayWithTasks() {
+      let latest = '';
+      for (const t of state.tasks) {
+        if (t.date && t.date > latest) latest = t.date;
+      }
+      return latest;
+    }
+
+    function updateSummaryPeriodButtonsUi() {
+      document.querySelectorAll('.sum-period-btn').forEach(b => {
+        const active = b.dataset.sumPeriod === state.summaryPeriod;
+        b.className = active
+          ? 'sum-period-btn px-3 py-1 rounded-lg text-xs font-semibold bg-white text-blue-700 shadow-xs transition'
+          : 'sum-period-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition';
+      });
+    }
+
+    function renderSummaryView() {
+      const refIso = document.getElementById('summaryRefDate').value || getTodayISO();
+      const dayRows = state.tasks.filter(t => t.date === refIso && t.employee);
+      const latestDate = getLatestWorkdayWithTasks();
+
+      const banner = document.getElementById('summaryZeroDayBanner');
+      const jumpBtn = document.getElementById('btnJumpLastWorkday');
+      if (dayRows.length === 0 && latestDate && latestDate !== refIso) {
+        banner.classList.remove('hidden');
+        document.getElementById('summaryZeroDayText').textContent = `За ${isoToRuDate(refIso)} записей нет — таблица взаимодействий переключена на неделю.`;
+        jumpBtn.textContent = `Перейти к последнему рабочему дню (${isoToRuDate(latestDate)})`;
+        jumpBtn.dataset.targetDate = latestDate;
+        if (!state.summaryManualPeriod && state.summaryPeriod === 'day') {
+          state.summaryPeriod = 'week';
+        }
+      } else {
+        banner.classList.add('hidden');
+      }
+      updateSummaryPeriodButtonsUi();
+
+      const kpiGrid = document.getElementById('summaryKpiGrid');
+      kpiGrid.innerHTML = ['day', 'week', 'month'].map(p => {
+        const range = getPeriodRange(refIso, p);
+        const rows = state.tasks.filter(t => t.date >= range.start && t.date <= range.end && t.employee);
+        const totalHours = rows.reduce((s, t) => s + (Number(t.minutes) || 0), 0) / 60;
+
+        const statusRows = state.statuses.map(st => {
+          const qtySum = rows.filter(t => t.status === st).reduce((s, t) => s + (Number(t.qty) || 0), 0);
+          return `
+            <div class="flex items-center justify-between py-1 border-b border-slate-100 last:border-0 text-xs">
+              <span class="text-slate-600">${escapeHtml(st.trim())}</span>
+              <span class="font-semibold text-slate-800">${qtySum} шт.</span>
+            </div>
+          `;
+        }).join('');
+
+        return `
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4">
+            <div class="flex items-center justify-between pb-2.5 mb-2 border-b border-slate-100">
+              <span class="text-xs font-bold uppercase tracking-wider text-blue-700">${escapeHtml(range.label)}</span>
+              <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">${totalHours.toFixed(2)} ч</span>
+            </div>
+            <div class="flex items-baseline justify-between mb-2.5">
+              <span class="text-xs text-slate-500">Всего записей</span>
+              <span class="text-2xl font-bold text-slate-900">${rows.length}</span>
+            </div>
+            <div class="bg-slate-50/70 rounded-xl px-3 py-1">${statusRows}</div>
+          </div>
+        `;
+      }).join('');
+
+      const activeRange = getPeriodRange(refIso, state.summaryPeriod);
+      const periodTasks = state.tasks.filter(t => t.date >= activeRange.start && t.date <= activeRange.end);
+      let sumRec = 0, sumDoneQty = 0, sumHours = 0;
+
+      document.getElementById('summaryDeptTableBody').innerHTML = state.departments.map(dept => {
+        const deptRows = periodTasks.filter(t => t.interaction === dept);
+        const rec = deptRows.length;
+        const doneQty = deptRows.filter(t => (t.status || '').trim() === 'Готово').reduce((s, t) => s + (Number(t.qty) || 0), 0);
+        const hrs = deptRows.reduce((s, t) => s + (Number(t.minutes) || 0), 0) / 60;
+        sumRec += rec;
+        sumDoneQty += doneQty;
+        sumHours += hrs;
+
+        return `
+          <tr class="hover:bg-slate-50 transition ${rec === 0 ? 'text-slate-400' : 'text-slate-800'}">
+            <td class="py-2 px-4 font-medium">${escapeHtml(dept)}</td>
+            <td class="py-2 px-4 text-right font-mono">${rec}</td>
+            <td class="py-2 px-4 text-right font-mono">${doneQty}</td>
+            <td class="py-2 px-4 text-right font-mono">${hrs.toFixed(2)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      document.getElementById('summaryDeptTableFoot').innerHTML = `
+        <tr>
+          <td class="py-2.5 px-4">Итого (${escapeHtml(activeRange.label)})</td>
+          <td class="py-2.5 px-4 text-right font-mono">${sumRec}</td>
+          <td class="py-2.5 px-4 text-right font-mono">${sumDoneQty}</td>
+          <td class="py-2.5 px-4 text-right font-mono">${sumHours.toFixed(2)}</td>
+        </tr>
+      `;
+    }
+
+    // =========================================================================
+    // 17. ИМПОРТ / ЭКСПОРТ EXCEL (.xlsx) И БЭКАП JSON
+    // =========================================================================
+    function parseExcelDateToIso(val) {
+      if (val === null || val === undefined || val === '') return '';
+      if (typeof val === 'number') {
+        const parsed = XLSX.SSF.parse_date_code(val);
+        if (parsed && parsed.y && parsed.m && parsed.d) {
+          return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+        }
+      }
+      if (val instanceof Date && !isNaN(val.getTime())) return dateObjToIso(val);
+      return ruDateToIso(String(val));
+    }
+
+    function findSheetName(wb, candidates) {
+      for (const c of candidates) if (wb.Sheets[c]) return c;
+      const lower = candidates.map(c => c.trim().toLowerCase());
+      return wb.SheetNames.find(n => lower.includes(n.trim().toLowerCase())) || null;
+    }
+
+    function handleExcelImport(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', raw: true });
+
+          const supSheet = findSheetName(wb, ['Поставщики', 'Поставщики ']);
+          if (supSheet) {
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[supSheet], { header: 1, defval: '' });
+            state.rawSuppliersSheet = rows;
+            const set = new Set();
+            for (let i = 1; i < rows.length; i++) {
+              const v = String(rows[i][0] || '').trim();
+              if (v) set.add(v);
+            }
+            if (set.size > 0) state.suppliers = Array.from(set);
+          }
+
+          const cliSheet = findSheetName(wb, ['Клиенты', 'Клиенты ']);
+          if (cliSheet) {
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[cliSheet], { header: 1, defval: '' });
+            state.rawClientsSheet = rows;
+            const set = new Set();
+            for (let i = 1; i < rows.length; i++) {
+              const v = String(rows[i][0] || '').trim();
+              if (v) set.add(v);
+            }
+            if (set.size > 0) state.clients = Array.from(set);
+          }
+
+          const empDeptSheet = findSheetName(wb, ['Сотрудники_отделы', 'Сотрудники_ отделы']);
+          if (empDeptSheet) {
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[empDeptSheet], { header: 1, defval: '' });
+            const emps = new Set(), depts = new Set(), sts = new Set(), res = new Set();
+            for (let i = 1; i < rows.length; i++) {
+              if (String(rows[i][0] || '').trim()) emps.add(String(rows[i][0]).trim());
+              if (String(rows[i][1] || '').trim()) depts.add(String(rows[i][1]).trim());
+              if (String(rows[i][2] || '').trim()) sts.add(String(rows[i][2]).trim());
+              if (String(rows[i][3] || '').trim()) res.add(String(rows[i][3]).trim());
+            }
+            if (emps.size > 0) state.employees = Array.from(emps);
+            if (depts.size > 0) state.departments = Array.from(depts);
+            if (sts.size > 0) state.statuses = Array.from(sts);
+            if (res.size > 0) state.results = Array.from(res);
+          }
+
+          const prodSheet = findSheetName(wb, ['Направления_продукты', 'Продукт_тема']);
+          if (prodSheet) {
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[prodSheet], { header: 1, defval: '' });
+            const set = new Set();
+            for (let i = 1; i < rows.length; i++) if (String(rows[i][0] || '').trim()) set.add(String(rows[i][0]).trim());
+            if (set.size > 0) state.products = Array.from(set);
+          }
+
+          const stageSheet = findSheetName(wb, ['Этап_повод']);
+          if (stageSheet) {
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[stageSheet], { header: 1, defval: '' });
+            const set = new Set();
+            for (let i = 1; i < rows.length; i++) if (String(rows[i][0] || '').trim()) set.add(String(rows[i][0]).trim());
+            if (set.size > 0) state.stages = Array.from(set);
+          }
+
+          const inputSheet = findSheetName(wb, ['Ввод сотрудника', 'Ввод сотрудника ']);
+          const importedTasks = [];
+          if (inputSheet) {
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[inputSheet], { header: 1, defval: '', raw: true });
+            for (let i = 1; i < rows.length; i++) {
+              const r = rows[i];
+              if (!r.some(c => c !== '' && c !== null && c !== undefined)) continue;
+              const dateIso = parseExcelDateToIso(r[1]);
+              const emp = String(r[2] || '').trim();
+              const desc = String(r[9] || '').trim();
+              if (!dateIso && !emp && !desc) continue;
+
+              importedTasks.push({
+                id: generateUid(),
+                taskNumber: String(r[0] || '').trim(),
+                date: dateIso || getTodayISO(),
+                employee: emp || state.selectedEmployee,
+                supplier: String(r[3] || '').trim(),
+                client: String(r[4] || '').trim(),
+                deal: String(r[5] || '').trim(),
+                product: String(r[6] || '').trim(),
+                interaction: String(r[7] || '').trim(),
+                stage: String(r[8] || '').trim(),
+                description: desc,
+                result: String(r[10] || '').trim(),
+                qty: Number(r[11]) || 0,
+                minutes: Number(r[12]) || 0,
+                status: String(r[13] || '').trim(),
+                waiting: String(r[14] || '').trim(),
+                docLink: String(r[15] || '').trim(),
+                createdAt: Date.now() + i
+              });
+            }
+          }
+
+          const finishImport = (mode) => {
+            pushHistory(`импорт Excel (${importedTasks.length} шт.)`);
+            state.tasks = mode === 'replace' ? importedTasks : [...state.tasks, ...importedTasks];
+
+            if (importedTasks.length > 0) {
+              if (state.employees.includes(importedTasks[0].employee)) {
+                state.selectedEmployee = importedTasks[0].employee;
+              }
+              importedTasks.slice(-15).forEach(t => {
+                if (t.client) recordRecent('recentClients', t.client);
+                if (t.supplier) recordRecent('recentSuppliers', t.supplier);
+              });
+              const latest = getLatestWorkdayWithTasks();
+              if (latest) state.weekAnchorIso = latest;
+            }
+
+            refreshAllSelects();
+            persistState();
+            updateDictStatusBadge();
+            document.getElementById('fieldTaskNumber').value = computeNextTaskNumber(document.getElementById('fieldDate').value);
+            refreshAllViews();
+            showToast(`Excel загружен! Задач: ${importedTasks.length} • Поставщиков: ${state.suppliers.length} • Клиентов: ${state.clients.length}`, 'success');
+          };
+
+          if (state.tasks.length > 0 && importedTasks.length > 0) {
+            openModal({
+              title: 'Импорт из Excel',
+              message: `В файле найдено ${importedTasks.length} записей. В трекере уже есть ${state.tasks.length} записей. Заменить текущие или добавить к ним?`,
+              buttons: [
+                { label: 'Отмена' },
+                { label: 'Добавить к текущим', className: 'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition', onClick: () => finishImport('append') },
+                { label: 'Заменить все', className: 'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition', onClick: () => finishImport('replace') }
+              ]
+            });
+          } else {
+            finishImport('replace');
+          }
+        } catch (err) {
+          console.error(err);
+          showToast('Ошибка чтения файла Excel (.xlsx)', 'error');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function buildExcelWorkbook({ fixMonthFormulas = true, sortByDate = true } = {}) {
+      const wb = XLSX.utils.book_new();
+
+      let exportTasks = [...state.tasks];
+      if (sortByDate) {
+        exportTasks.sort((a, b) => {
+          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          const nA = parseInt((a.taskNumber || '').split('_')[1], 10) || 0;
+          const nB = parseInt((b.taskNumber || '').split('_')[1], 10) || 0;
+          return nA - nB;
+        });
+      }
+
+      // Лист 1: «Ввод сотрудника»
+      const wsInput = {};
+      EXCEL_HEADERS.forEach((h, c) => {
+        wsInput[XLSX.utils.encode_cell({ r: 0, c })] = { t: 's', v: h };
+      });
+
+      exportTasks.forEach((t, idx) => {
+        const r = idx + 1;
+        const setStr = (c, v) => { wsInput[XLSX.utils.encode_cell({ r, c })] = { t: 's', v: v || '' }; };
+        const setNum = (c, v) => { wsInput[XLSX.utils.encode_cell({ r, c })] = { t: 'n', v: Number(v) || 0 }; };
+
+        setStr(0, t.taskNumber);
+        if (t.date && /^\d{4}-\d{2}-\d{2}$/.test(t.date)) {
+          const [y, m, d] = t.date.split('-').map(Number);
+          wsInput[XLSX.utils.encode_cell({ r, c: 1 })] = { t: 'd', v: new Date(y, m - 1, d, 0, 0, 0), z: 'dd.mm.yyyy' };
+        } else {
+          setStr(1, '');
+        }
+        setStr(2, t.employee);
+        setStr(3, t.supplier);
+        setStr(4, t.client);
+        setStr(5, t.deal);
+        setStr(6, t.product);
+        setStr(7, t.interaction);
+        setStr(8, t.stage);
+        setStr(9, t.description);
+        setStr(10, t.result);
+        setNum(11, t.qty);
+        setNum(12, t.minutes);
+        setStr(13, t.status);
+        setStr(14, t.waiting);
+        setStr(15, t.docLink);
+      });
+
+      wsInput['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(1, exportTasks.length), c: 15 } });
+      wsInput['!cols'] = [
+        { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 30 }, { wch: 36 }, { wch: 20 },
+        { wch: 22 }, { wch: 22 }, { wch: 34 }, { wch: 48 }, { wch: 24 }, { wch: 12 },
+        { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 26 }
+      ];
+      XLSX.utils.book_append_sheet(wb, wsInput, 'Ввод сотрудника');
+
+      // Лист 2: «Сводка руководителя»
+      const wsSum = {};
+      const S = "'Ввод сотрудника'";
+      const maxRow = Math.max(500, exportTasks.length + 100);
+      const DAY_COND = `${S}!$B$2:$B$${maxRow},TODAY()`;
+      const WEEK_COND = `${S}!$B$2:$B$${maxRow},">="&(TODAY()-WEEKDAY(TODAY(),2)+1),${S}!$B$2:$B$${maxRow},"<="&(TODAY()-WEEKDAY(TODAY(),2)+7)`;
+      const MONTH_COND = `${S}!$B$2:$B$${maxRow},">="&(EOMONTH(TODAY(),-1)+1),${S}!$B$2:$B$${maxRow},"<="&EOMONTH(TODAY(),0)`;
+      const TOP_MONTH_COND = fixMonthFormulas ? MONTH_COND : WEEK_COND;
+
+      wsSum['A1'] = { t: 's', v: 'СВОДКА РУКОВОДИТЕЛЯ' };
+      wsSum['A3'] = { t: 's', v: 'за день (СЕГОДНЯ)' };
+      wsSum['F3'] = { t: 's', v: 'за неделю (ТЕКУЩУЮ ОТ ДАТЫ)' };
+      wsSum['K3'] = { t: 's', v: 'за месяц' };
+
+      wsSum['A4'] = { t: 's', v: 'Показатель' }; wsSum['B4'] = { t: 's', v: 'Значение' };
+      wsSum['F4'] = { t: 's', v: 'Показатель' }; wsSum['G4'] = { t: 's', v: 'Значение' };
+      wsSum['K4'] = { t: 's', v: 'Показатель' }; wsSum['L4'] = { t: 's', v: 'Значение' };
+
+      wsSum['A5'] = { t: 's', v: 'Записей' };
+      wsSum['B5'] = { t: 'n', f: `COUNTIFS(${DAY_COND},${S}!$C$2:$C$${maxRow},"<>")` };
+      wsSum['F5'] = { t: 's', v: 'Записей' };
+      wsSum['G5'] = { t: 'n', f: `COUNTIFS(${WEEK_COND},${S}!$C$2:$C$${maxRow},"<>")` };
+      wsSum['K5'] = { t: 's', v: 'Записей' };
+      wsSum['L5'] = { t: 'n', f: `COUNTIFS(${TOP_MONTH_COND},${S}!$C$2:$C$${maxRow},"<>")` };
+
+      state.statuses.forEach((st, idx) => {
+        const row = 6 + idx;
+        wsSum[`A${row}`] = { t: 's', v: st };
+        wsSum[`B${row}`] = { t: 'n', f: `SUMIFS(${S}!$L$2:$L$${maxRow},${DAY_COND},${S}!$N$2:$N$${maxRow},$A${row})` };
+        wsSum[`F${row}`] = { t: 's', v: st };
+        wsSum[`G${row}`] = { t: 'n', f: `SUMIFS(${S}!$L$2:$L$${maxRow},${WEEK_COND},${S}!$N$2:$N$${maxRow},$F${row})` };
+        wsSum[`K${row}`] = { t: 's', v: st };
+        wsSum[`L${row}`] = { t: 'n', f: `SUMIFS(${S}!$L$2:$L$${maxRow},${TOP_MONTH_COND},${S}!$N$2:$N$${maxRow},$K${row})` };
+      });
+
+      const deptTitleRow = 6 + state.statuses.length + 1;
+      const deptHeaderRow = deptTitleRow + 1;
+      const deptStartRow = deptHeaderRow + 1;
+
+      wsSum[`A${deptTitleRow}`] = { t: 's', v: 'за день (СЕГОДНЯ)' };
+      wsSum[`F${deptTitleRow}`] = { t: 's', v: 'за неделю (ТЕКУЩУЮ ОТ ДАТЫ)' };
+      wsSum[`K${deptTitleRow}`] = { t: 's', v: 'за месяц' };
+
+      const dh = ['Подразделение / контрагент', 'Записей', 'Готово, шт.', 'Часы'];
+      ['A', 'B', 'C', 'D'].forEach((c, i) => { wsSum[`${c}${deptHeaderRow}`] = { t: 's', v: dh[i] }; });
+      ['F', 'G', 'H', 'I'].forEach((c, i) => { wsSum[`${c}${deptHeaderRow}`] = { t: 's', v: dh[i] }; });
+      ['K', 'L', 'M', 'N'].forEach((c, i) => { wsSum[`${c}${deptHeaderRow}`] = { t: 's', v: dh[i] }; });
+
+      state.departments.forEach((dept, idx) => {
+        const row = deptStartRow + idx;
+        wsSum[`A${row}`] = { t: 's', v: dept };
+        wsSum[`B${row}`] = { t: 'n', f: `COUNTIFS(${DAY_COND},${S}!$H$2:$H$${maxRow},$A${row})` };
+        wsSum[`C${row}`] = { t: 'n', f: `SUMIFS(${S}!$L$2:$L$${maxRow},${DAY_COND},${S}!$H$2:$H$${maxRow},$A${row},${S}!$N$2:$N$${maxRow},"Готово")` };
+        wsSum[`D${row}`] = { t: 'n', f: `SUMIFS(${S}!$M$2:$M$${maxRow},${DAY_COND},${S}!$H$2:$H$${maxRow},$A${row})/60`, z: '0.00' };
+
+        wsSum[`F${row}`] = { t: 's', v: dept };
+        wsSum[`G${row}`] = { t: 'n', f: `COUNTIFS(${WEEK_COND},${S}!$H$2:$H$${maxRow},$F${row})` };
+        wsSum[`H${row}`] = { t: 'n', f: `SUMIFS(${S}!$L$2:$L$${maxRow},${WEEK_COND},${S}!$H$2:$H$${maxRow},$F${row},${S}!$N$2:$N$${maxRow},"Готово")` };
+        wsSum[`I${row}`] = { t: 'n', f: `SUMIFS(${S}!$M$2:$M$${maxRow},${WEEK_COND},${S}!$H$2:$H$${maxRow},$F${row})/60`, z: '0.00' };
+
+        wsSum[`K${row}`] = { t: 's', v: dept };
+        wsSum[`L${row}`] = { t: 'n', f: `COUNTIFS(${MONTH_COND},${S}!$H$2:$H$${maxRow},$K${row})` };
+        wsSum[`M${row}`] = { t: 'n', f: `SUMIFS(${S}!$L$2:$L$${maxRow},${MONTH_COND},${S}!$H$2:$H$${maxRow},$K${row},${S}!$N$2:$N$${maxRow},"Готово")` };
+        wsSum[`N${row}`] = { t: 'n', f: `SUMIFS(${S}!$M$2:$M$${maxRow},${MONTH_COND},${S}!$H$2:$H$${maxRow},$K${row})/60`, z: '0.00' };
+      });
+
+      wsSum['!ref'] = `A1:N${deptStartRow + state.departments.length - 1}`;
+      wsSum['!cols'] = [
+        { wch: 28 }, { wch: 11 }, { wch: 12 }, { wch: 10 }, { wch: 4 },
+        { wch: 28 }, { wch: 11 }, { wch: 12 }, { wch: 10 }, { wch: 4 },
+        { wch: 28 }, { wch: 11 }, { wch: 12 }, { wch: 10 }
+      ];
+      XLSX.utils.book_append_sheet(wb, wsSum, 'Сводка руководителя');
+
+      // Лист 3: «Сотрудники_отделы»
+      const maxRefLen = Math.max(state.employees.length, state.departments.length, state.statuses.length, state.results.length);
+      const empDeptRows = [['Сотрудники', 'Отделы', 'Статус', 'Результат (тип)']];
+      for (let i = 0; i < maxRefLen; i++) {
+        empDeptRows.push([state.employees[i] || '', state.departments[i] || '', state.statuses[i] || '', state.results[i] || '']);
+      }
+      const wsEmpDept = XLSX.utils.aoa_to_sheet(empDeptRows);
+      wsEmpDept['!cols'] = [{ wch: 18 }, { wch: 28 }, { wch: 18 }, { wch: 28 }];
+      XLSX.utils.book_append_sheet(wb, wsEmpDept, 'Сотрудники_отделы');
+
+      // Лист 4: «Поставщики»
+      const supAoa = state.rawSuppliersSheet && state.rawSuppliersSheet.length > 1
+        ? state.rawSuppliersSheet
+        : [['Наименование'], ...state.suppliers.map(s => [s])];
+      const wsSup = XLSX.utils.aoa_to_sheet(supAoa);
+      wsSup['!cols'] = [{ wch: 52 }];
+      XLSX.utils.book_append_sheet(wb, wsSup, 'Поставщики');
+
+      // Лист 5: «Клиенты»
+      const cliAoa = state.rawClientsSheet && state.rawClientsSheet.length > 1
+        ? state.rawClientsSheet
+        : [['Наименование'], ...state.clients.map(c => [c])];
+      const wsCli = XLSX.utils.aoa_to_sheet(cliAoa);
+      wsCli['!cols'] = [{ wch: 60 }];
+      XLSX.utils.book_append_sheet(wb, wsCli, 'Клиенты');
+
+      // Лист 6: «Направления_продукты»
+      const wsProd = XLSX.utils.aoa_to_sheet([['Направление / продукт'], ...state.products.map(p => [p])]);
+      wsProd['!cols'] = [{ wch: 44 }];
+      XLSX.utils.book_append_sheet(wb, wsProd, 'Направления_продукты');
+
+      // Лист 7: «Этап_повод»
+      const wsStage = XLSX.utils.aoa_to_sheet([['Этап / повод'], ...state.stages.map(s => [s])]);
+      wsStage['!cols'] = [{ wch: 56 }];
+      XLSX.utils.book_append_sheet(wb, wsStage, 'Этап_повод');
+
+      return wb;
+    }
+
+    function downloadJsonBackup() {
+      const payload = {
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        selectedEmployee: state.selectedEmployee,
+        tasks: state.tasks,
+        employees: state.employees,
+        departments: state.departments,
+        products: state.products,
+        stages: state.stages,
+        results: state.results,
+        statuses: state.statuses,
+        recentSuppliers: state.recentSuppliers,
+        recentClients: state.recentClients,
+        suppliers: state.suppliers,
+        clients: state.clients
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dept_tracker_backup_${getTodayISO()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Резервная копия JSON сохранена', 'success');
+    }
+
+    function handleJsonRestore(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          if (!parsed || !Array.isArray(parsed.tasks)) throw new Error('Неверный формат');
+          pushHistory('восстановление из JSON');
+          state.tasks = parsed.tasks;
+          if (Array.isArray(parsed.employees) && parsed.employees.length) state.employees = parsed.employees;
+          if (Array.isArray(parsed.departments) && parsed.departments.length) state.departments = parsed.departments;
+          if (Array.isArray(parsed.products) && parsed.products.length) state.products = parsed.products;
+          if (Array.isArray(parsed.stages) && parsed.stages.length) state.stages = parsed.stages;
+          if (Array.isArray(parsed.results) && parsed.results.length) state.results = parsed.results;
+          if (Array.isArray(parsed.statuses) && parsed.statuses.length) state.statuses = parsed.statuses;
+          if (Array.isArray(parsed.suppliers) && parsed.suppliers.length) {
+            state.suppliers = parsed.suppliers;
+            state.rawSuppliersSheet = null;
+          }
+          if (Array.isArray(parsed.clients) && parsed.clients.length) {
+            state.clients = parsed.clients;
+            state.rawClientsSheet = null;
+          }
+          if (Array.isArray(parsed.recentSuppliers)) state.recentSuppliers = parsed.recentSuppliers;
+          if (Array.isArray(parsed.recentClients)) state.recentClients = parsed.recentClients;
+          if (parsed.selectedEmployee && state.employees.includes(parsed.selectedEmployee)) {
+            state.selectedEmployee = parsed.selectedEmployee;
+          } else {
+            state.selectedEmployee = state.employees[0] || '';
+          }
+
+          persistState();
+          refreshAllSelects();
+          updateDictStatusBadge();
+          refreshAllViews();
+          showToast(`Восстановлено ${state.tasks.length} записей из JSON`, 'success');
+        } catch (err) {
+          showToast('Не удалось прочитать файл JSON', 'error');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // =========================================================================
+    // 18. ОБНОВЛЕНИЕ ВСЕХ ПРЕДСТАВЛЕНИЙ И ИНИЦИАЛИЗАЦИЯ
+    // =========================================================================
+    function refreshAllViews() {
+      renderWeekCalendar();
+      renderOpenTasksPanel();
+      renderTasksTable();
+      updateDailyProgress();
+      updateAuditBadge();
+      if (!document.getElementById('viewSummary').classList.contains('hidden')) {
+        renderSummaryView();
+      }
+      if (!document.getElementById('viewDictionaries').classList.contains('hidden')) {
+        renderDictionariesView();
+      }
+    }
+
+    function switchTab(tab) {
+      const tabs = [
+        { id: 'tasks', viewId: 'viewTasks', btnId: 'tabBtnTasks' },
+        { id: 'summary', viewId: 'viewSummary', btnId: 'tabBtnSummary' },
+        { id: 'dictionaries', viewId: 'viewDictionaries', btnId: 'tabBtnDictionaries' }
+      ];
+
+      tabs.forEach(t => {
+        const active = t.id === tab;
+        document.getElementById(t.viewId).classList.toggle('hidden', !active);
+        const btn = document.getElementById(t.btnId);
+        btn.setAttribute('aria-selected', String(active));
+        btn.className = active
+          ? 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-blue-600 text-white shadow-xs transition'
+          : 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-100 transition';
+      });
+
+      if (tab === 'summary') renderSummaryView();
+      if (tab === 'dictionaries') renderDictionariesView();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadState();
+      refreshAllSelects();
+
+      supplierComboApi = setupSearchableCombobox({
+        inputEl: document.getElementById('fieldSupplier'),
+        dropdownEl: document.getElementById('supplierDropdown'),
+        clearBtnEl: document.getElementById('clearSupplierBtn'),
+        getItems: () => state.suppliers,
+        getRecents: () => state.recentSuppliers,
+        clearInputOnSelect: true,
+        onCreateNew: (val) => addDictionaryItem('suppliers', val),
+        onSelect: (val) => {
+          if (val) addSupplierChip(val);
+        }
+      });
+
+      clientComboApi = setupSearchableCombobox({
+        inputEl: document.getElementById('fieldClient'),
+        dropdownEl: document.getElementById('clientDropdown'),
+        clearBtnEl: document.getElementById('clearClientBtn'),
+        getItems: () => state.clients,
+        getRecents: () => state.recentClients,
+        onCreateNew: (val) => addDictionaryItem('clients', val)
+      });
+
+      document.getElementById('selectedSuppliersChips').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-remove-sup]');
+        if (btn) removeSupplierChip(btn.dataset.removeSup);
+      });
+
+      const today = getTodayISO();
+      state.weekAnchorIso = getLatestWorkdayWithTasks() || today;
+      document.getElementById('fieldDate').value = today;
+      document.getElementById('summaryRefDate').value = today;
+
+      resetForm(false);
+      updateDictStatusBadge();
+      updateUndoButton();
+      refreshAllViews();
+
+      document.getElementById('globalEmployeeSelect').addEventListener('change', (e) => {
+        state.selectedEmployee = e.target.value;
+        persistState();
+      });
+
+      // Навигация по вкладкам
+      document.getElementById('tabBtnTasks').addEventListener('click', () => switchTab('tasks'));
+      document.getElementById('tabBtnSummary').addEventListener('click', () => switchTab('summary'));
+      document.getElementById('tabBtnDictionaries').addEventListener('click', () => switchTab('dictionaries'));
+      document.getElementById('dictStatusBadge').addEventListener('click', () => {
+        state.activeDictKey = 'clients';
+        switchTab('dictionaries');
+      });
+
+      // Управление справочниками
+      document.getElementById('dictTabsContainer').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-dict-tab]');
+        if (!btn) return;
+        state.activeDictKey = btn.dataset.dictTab;
+        document.getElementById('dictSearchInput').value = '';
+        renderDictionariesView();
+      });
+
+      document.getElementById('dictAddForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const inp = document.getElementById('dictNewItemInput');
+        if (addDictionaryItem(state.activeDictKey, inp.value)) {
+          inp.value = '';
+          inp.focus();
+        }
+      });
+
+      document.getElementById('dictSearchInput').addEventListener('input', renderDictionariesView);
+
+      document.getElementById('dictItemsList').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-dict-del]');
+        if (btn) removeDictionaryItem(state.activeDictKey, btn.dataset.dictDel);
+      });
+
+      document.getElementById('btnResetActiveDict').addEventListener('click', () => {
+        const cfg = DICTIONARY_CONFIG.find(c => c.key === state.activeDictKey);
+        if (!cfg) return;
+        openModal({
+          title: 'Сбросить справочник?',
+          message: `Вернуть список «${cfg.label}» к исходным значениям по умолчанию? Уже созданные задачи в трекере не пострадают.`,
+          buttons: [
+            { label: 'Отмена' },
+            {
+              label: 'Сбросить',
+              className: 'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white transition',
+              onClick: () => {
+                state[cfg.key] = [...cfg.defaults];
+                if (cfg.key === 'suppliers') state.rawSuppliersSheet = null;
+                if (cfg.key === 'clients') state.rawClientsSheet = null;
+                if (cfg.key === 'employees' && !state.employees.includes(state.selectedEmployee)) {
+                  state.selectedEmployee = state.employees[0] || '';
+                }
+                persistState();
+                refreshAllSelects();
+                updateDictStatusBadge();
+                renderDictionariesView();
+                showToast(`Справочник «${cfg.label}» сброшен`, 'info');
+              }
+            }
+          ]
+        });
+      });
+
+      document.getElementById('btnUndo').addEventListener('click', performUndo);
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+          const tag = (document.activeElement?.tagName || '').toLowerCase();
+          if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') {
+            e.preventDefault();
+            performUndo();
+          }
+        }
+      });
+
+      document.getElementById('btnWeekPrev').addEventListener('click', () => {
+        const dt = isoToDateObj(state.weekAnchorIso);
+        dt.setDate(dt.getDate() - 7);
+        state.weekAnchorIso = dateObjToIso(dt);
+        renderWeekCalendar();
+      });
+      document.getElementById('btnWeekNext').addEventListener('click', () => {
+        const dt = isoToDateObj(state.weekAnchorIso);
+        dt.setDate(dt.getDate() + 7);
+        state.weekAnchorIso = dateObjToIso(dt);
+        renderWeekCalendar();
+      });
+      document.getElementById('btnWeekCurrent').addEventListener('click', () => {
+        state.weekAnchorIso = getTodayISO();
+        renderWeekCalendar();
+      });
+      document.getElementById('weekCalendarStrip').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-week-day]');
+        if (!btn) return;
+        const iso = btn.dataset.weekDay;
+        const filterDateEl = document.getElementById('filterDate');
+        if (filterDateEl.value === iso) {
+          filterDateEl.value = '';
+        } else {
+          filterDateEl.value = iso;
+          if (!document.getElementById('editTaskId').value) {
+            document.getElementById('fieldDate').value = iso;
+            document.getElementById('fieldTaskNumber').value = computeNextTaskNumber(iso);
+          }
+        }
+        renderWeekCalendar();
+        renderTasksTable();
+        updateDailyProgress();
+      });
+
+      document.getElementById('btnToggleOpenPanel').addEventListener('click', () => {
+        state.openPanelExpanded = !state.openPanelExpanded;
+        renderOpenTasksPanel();
+      });
+      document.getElementById('openTasksPanelBody').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-open-action]');
+        if (!btn) return;
+        const task = state.tasks.find(t => t.id === btn.dataset.taskId);
+        if (!task) return;
+        if (btn.dataset.openAction === 'log') {
+          fillFormFromTask(task, 'continue');
+        } else if (btn.dataset.openAction === 'close') {
+          pushHistory(`закрытие задачи ${task.taskNumber}`);
+          task.status = 'Готово';
+          persistState();
+          refreshAllViews();
+          showToast(`Задача ${task.taskNumber} закрыта («Готово»)`, 'success');
+        }
+      });
+
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+      });
+      document.querySelectorAll('.time-chip').forEach(btn => {
+        btn.addEventListener('click', () => { document.getElementById('fieldMinutes').value = btn.dataset.mins; });
+      });
+      document.getElementById('btnTimerPlayPause').addEventListener('click', toggleTimerPlayPause);
+      document.getElementById('btnTimerReset').addEventListener('click', resetTimer);
+      document.getElementById('btnTimerApply').addEventListener('click', applyTimerToMinutes);
+
+      document.getElementById('fieldDate').addEventListener('change', (e) => {
+        if (!document.getElementById('editTaskId').value) {
+          document.getElementById('fieldTaskNumber').value = computeNextTaskNumber(e.target.value);
+        }
+        updateDailyProgress();
+      });
+      ['fieldInteraction', 'fieldStage', 'fieldDocLink', 'fieldResult', 'fieldDescription', 'fieldSupplier'].forEach(id => {
+        const el = document.getElementById(id);
+        el.addEventListener('change', updateFormSmartHints);
+        el.addEventListener('input', updateFormSmartHints);
+      });
+
+      document.getElementById('btnPickOpenTask').addEventListener('click', () => {
+        const dd = document.getElementById('openTasksDropdown');
+        if (!dd.classList.contains('hidden')) { dd.classList.add('hidden'); return; }
+        const openList = getGroupedOpenTasks();
+        dd.innerHTML = openList.length === 0
+          ? `<div class="px-3 py-2 text-xs text-slate-400">Нет открытых задач</div>`
+          : openList.map(g => `
+              <button type="button" data-num="${escapeHtml(g.taskNumber)}" class="open-task-opt w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition block">
+                <div class="text-xs font-mono font-semibold text-blue-700">${escapeHtml(g.taskNumber)}</div>
+                <div class="text-[11px] text-slate-500 truncate">${escapeHtml(g.latest.description || g.latest.stage)}</div>
+              </button>
+            `).join('');
+        dd.classList.remove('hidden');
+      });
+      document.getElementById('openTasksDropdown').addEventListener('click', (e) => {
+        const opt = e.target.closest('.open-task-opt');
+        if (opt) {
+          document.getElementById('fieldTaskNumber').value = opt.dataset.num;
+          document.getElementById('openTasksDropdown').classList.add('hidden');
+        }
+      });
+      document.addEventListener('click', (e) => {
+        const dd = document.getElementById('openTasksDropdown');
+        if (!dd.contains(e.target) && e.target !== document.getElementById('btnPickOpenTask')) dd.classList.add('hidden');
+      });
+
+      document.getElementById('btnResetForm').addEventListener('click', () => resetForm(true));
+      document.getElementById('btnCancelEdit').addEventListener('click', () => resetForm(true));
+      document.getElementById('btnLoadDemoData').addEventListener('click', loadDemoTasks);
+
+      document.getElementById('taskForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const editId = document.getElementById('editTaskId').value;
+        const typedSupplier = document.getElementById('fieldSupplier').value.trim();
+        let suppliersToSave = [...state.selectedSuppliers];
+        if (typedSupplier && !suppliersToSave.includes(typedSupplier)) {
+          suppliersToSave.push(typedSupplier);
+        }
+
+        const date = document.getElementById('fieldDate').value;
+        const client = document.getElementById('fieldClient').value.trim();
+        if (client) {
+          recordRecent('recentClients', client);
+          addDictionaryItem('clients', client, true);
+        }
+        suppliersToSave.forEach(s => {
+          recordRecent('recentSuppliers', s);
+          addDictionaryItem('suppliers', s, true);
+        });
+
+        const basePayload = {
+          date,
+          employee: state.selectedEmployee,
+          client,
+          deal: document.getElementById('fieldDeal').value.trim(),
+          product: document.getElementById('fieldProduct').value,
+          interaction: document.getElementById('fieldInteraction').value,
+          stage: document.getElementById('fieldStage').value,
+          description: document.getElementById('fieldDescription').value.trim(),
+          result: document.getElementById('fieldResult').value,
+          qty: Number(document.getElementById('fieldQty').value) || 0,
+          minutes: Number(document.getElementById('fieldMinutes').value) || 0,
+          status: document.getElementById('fieldStatus').value,
+          waiting: document.getElementById('fieldWaiting').value,
+          docLink: document.getElementById('fieldDocLink').value.trim()
+        };
+
+        if (editId) {
+          pushHistory(`редактирование ${document.getElementById('fieldTaskNumber').value.trim()}`);
+          const idx = state.tasks.findIndex(t => t.id === editId);
+          if (idx !== -1) {
+            state.tasks[idx] = {
+              ...basePayload,
+              id: editId,
+              taskNumber: document.getElementById('fieldTaskNumber').value.trim(),
+              supplier: suppliersToSave[0] || '',
+              createdAt: state.tasks[idx].createdAt
+            };
+          }
+          showToast('Изменения сохранены', 'success');
+        } else if (suppliersToSave.length > 1) {
+          pushHistory(`добавление ${suppliersToSave.length} задач`);
+          suppliersToSave.forEach((sup, idx) => {
+            state.tasks.push({
+              ...basePayload,
+              id: generateUid(),
+              taskNumber: computeNextTaskNumber(date, 0),
+              supplier: sup,
+              createdAt: Date.now() + idx
+            });
+          });
+          showToast(`Добавлено ${suppliersToSave.length} задач по разным поставщикам`, 'success');
+        } else {
+          const num = document.getElementById('fieldTaskNumber').value.trim();
+          pushHistory(`добавление ${num}`);
+          state.tasks.push({
+            ...basePayload,
+            id: generateUid(),
+            taskNumber: num,
+            supplier: suppliersToSave[0] || '',
+            createdAt: Date.now()
+          });
+          showToast(`Запись ${num} добавлена`, 'success');
+        }
+
+        persistState();
+        updateDictStatusBadge();
+        resetForm(true);
+        refreshAllViews();
+      });
+
+      document.getElementById('tasksTableBody').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const task = state.tasks.find(t => t.id === btn.dataset.id);
+        if (!task) return;
+
+        if (btn.dataset.action === 'done') {
+          pushHistory(`статус «Готово» для ${task.taskNumber}`);
+          task.status = 'Готово';
+          persistState();
+          refreshAllViews();
+          showToast(`Задача ${task.taskNumber} отмечена «Готово»`, 'success');
+        } else if (btn.dataset.action === 'edit') {
+          fillFormFromTask(task, 'edit');
+        } else if (btn.dataset.action === 'duplicate') {
+          fillFormFromTask(task, 'duplicate');
+          showToast('Данные скопированы в форму с новым номером', 'info');
+        } else if (btn.dataset.action === 'delete') {
+          pushHistory(`удаление ${task.taskNumber}`);
+          state.tasks = state.tasks.filter(t => t.id !== task.id);
+          if (document.getElementById('editTaskId').value === task.id) resetForm(true);
+          persistState();
+          refreshAllViews();
+          showToast(`Запись ${task.taskNumber} удалена (Ctrl+Z для отмены)`, 'info');
+        }
+      });
+
+      document.getElementById('filterDate').addEventListener('change', () => {
+        renderWeekCalendar();
+        renderTasksTable();
+      });
+      document.getElementById('btnFilterAllDates').addEventListener('click', () => {
+        document.getElementById('filterDate').value = '';
+        renderWeekCalendar();
+        renderTasksTable();
+      });
+      document.getElementById('filterStatus').addEventListener('change', renderTasksTable);
+      document.getElementById('filterStage').addEventListener('change', renderTasksTable);
+      document.getElementById('filterSearch').addEventListener('input', renderTasksTable);
+
+      document.getElementById('btnClearAllTasks').addEventListener('click', () => {
+        if (state.tasks.length === 0) return;
+        openModal({
+          title: 'Очистить все записи?',
+          message: `Удалить все ${state.tasks.length} записей? Загруженные справочники сохранятся, а действие можно будет отменить через Ctrl+Z.`,
+          buttons: [
+            { label: 'Отмена' },
+            {
+              label: 'Очистить всё',
+              className: 'px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white transition',
+              onClick: () => {
+                pushHistory(`очистка всех записей (${state.tasks.length} шт.)`);
+                state.tasks = [];
+                persistState();
+                resetForm(true);
+                refreshAllViews();
+                showToast('Все записи очищены', 'info');
+              }
+            }
+          ]
+        });
+      });
+
+      document.getElementById('btnOpenBatchModal').addEventListener('click', openBatchModal);
+      document.getElementById('btnCloseBatchModal').addEventListener('click', () => document.getElementById('batchModal').classList.add('hidden'));
+      document.getElementById('btnCancelBatchModal').addEventListener('click', () => document.getElementById('batchModal').classList.add('hidden'));
+      document.getElementById('btnAddBatchRow').addEventListener('click', () => {
+        document.getElementById('batchRowsContainer').appendChild(createBatchRowElement());
+        updateBatchCounter();
+      });
+      document.getElementById('batchMinutes').addEventListener('input', updateBatchCounter);
+      document.getElementById('btnSaveBatchRows').addEventListener('click', saveBatchMonitoring);
+
+      document.getElementById('summaryRefDate').addEventListener('change', () => {
+        state.summaryManualPeriod = false;
+        renderSummaryView();
+      });
+      document.getElementById('btnJumpLastWorkday').addEventListener('click', (e) => {
+        const target = e.currentTarget.dataset.targetDate;
+        if (target) {
+          document.getElementById('summaryRefDate').value = target;
+          state.summaryPeriod = 'day';
+          state.summaryManualPeriod = false;
+          renderSummaryView();
+        }
+      });
+      document.querySelectorAll('.sum-period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.summaryPeriod = btn.dataset.sumPeriod;
+          state.summaryManualPeriod = true;
+          renderSummaryView();
+        });
+      });
+
+      const openAudit = () => {
+        renderAuditModal();
+        document.getElementById('auditModal').classList.remove('hidden');
+      };
+      document.getElementById('btnOpenAudit').addEventListener('click', openAudit);
+      document.getElementById('btnCloseAuditModal').addEventListener('click', () => document.getElementById('auditModal').classList.add('hidden'));
+      document.getElementById('btnDoneAuditModal').addEventListener('click', () => document.getElementById('auditModal').classList.add('hidden'));
+      document.getElementById('btnAuditToExport').addEventListener('click', () => {
+        document.getElementById('auditModal').classList.add('hidden');
+        openExportSettingsModal();
+      });
+
+      document.getElementById('auditModalBody').addEventListener('click', (e) => {
+        const dayBtn = e.target.closest('button[data-audit-day]');
+        if (dayBtn) {
+          const iso = dayBtn.dataset.auditDay;
+          document.getElementById('auditModal').classList.add('hidden');
+          switchTab('tasks');
+          document.getElementById('filterDate').value = iso;
+          state.weekAnchorIso = iso;
+          refreshAllViews();
+          return;
+        }
+        const taskBtn = e.target.closest('button[data-audit-task]');
+        if (taskBtn) {
+          const task = state.tasks.find(t => t.id === taskBtn.dataset.auditTask);
+          if (task) {
+            document.getElementById('auditModal').classList.add('hidden');
+            switchTab('tasks');
+            fillFormFromTask(task, 'edit');
+          }
+          return;
+        }
+        if (e.target.closest('#btnAuditSortByDate')) {
+          pushHistory('сортировка по дате');
+          state.tasks.sort((a, b) => {
+            if (a.date !== b.date) return a.date.localeCompare(b.date);
+            const nA = parseInt((a.taskNumber || '').split('_')[1], 10) || 0;
+            const nB = parseInt((b.taskNumber || '').split('_')[1], 10) || 0;
+            return nA - nB;
+          });
+          persistState();
+          refreshAllViews();
+          renderAuditModal();
+          showToast('Записи отсортированы по дате', 'success');
+        }
+      });
+
+      function openExportSettingsModal() {
+        document.getElementById('exportFilename').value = `Рабочий трекер отдела - ${state.selectedEmployee || 'Сотрудник'}.xlsx`;
+        const { totalIssues } = runAudit();
+        const hint = document.getElementById('exportAuditHint');
+        if (totalIssues > 0) {
+          document.getElementById('exportAuditHintText').textContent = `В трекере найдено замечаний: ${totalIssues}`;
+          hint.classList.remove('hidden');
+        } else {
+          hint.classList.add('hidden');
+        }
+        document.getElementById('exportModal').classList.remove('hidden');
+      }
+
+      document.getElementById('btnOpenExportModal').addEventListener('click', openExportSettingsModal);
+      document.getElementById('btnCloseExportModal').addEventListener('click', () => document.getElementById('exportModal').classList.add('hidden'));
+      document.getElementById('btnCancelExportModal').addEventListener('click', () => document.getElementById('exportModal').classList.add('hidden'));
+      document.getElementById('btnExportOpenAudit').addEventListener('click', () => {
+        document.getElementById('exportModal').classList.add('hidden');
+        openAudit();
+      });
+      document.getElementById('btnConfirmExport').addEventListener('click', () => {
+        try {
+          const fixMonthFormulas = document.getElementById('exportFixMonthFormulas').checked;
+          const sortByDate = document.getElementById('exportSortByDate').checked;
+          let filename = document.getElementById('exportFilename').value.trim() || `Рабочий трекер отдела - ${state.selectedEmployee}.xlsx`;
+          if (!filename.toLowerCase().endsWith('.xlsx')) filename += '.xlsx';
+
+          const wb = buildExcelWorkbook({ fixMonthFormulas, sortByDate });
+          XLSX.writeFile(wb, filename);
+          document.getElementById('exportModal').classList.add('hidden');
+          showToast(`Файл «${filename}» выгружен`, 'success');
+        } catch (err) {
+          console.error(err);
+          showToast('Ошибка при формировании Excel', 'error');
+        }
+      });
+
+      const excelInput = document.getElementById('excelFileInput');
+      document.getElementById('btnImportExcel').addEventListener('click', () => { excelInput.value = ''; excelInput.click(); });
+      excelInput.addEventListener('change', (e) => { if (e.target.files?.[0]) handleExcelImport(e.target.files[0]); });
+
+      const backupDd = document.getElementById('backupDropdown');
+      document.getElementById('btnBackupMenu').addEventListener('click', () => backupDd.classList.toggle('hidden'));
+      document.addEventListener('click', (e) => {
+        if (!document.getElementById('backupMenuWrapper').contains(e.target)) backupDd.classList.add('hidden');
+      });
+      document.getElementById('btnSaveJson').addEventListener('click', () => {
+        backupDd.classList.add('hidden');
+        downloadJsonBackup();
+      });
+      const jsonInput = document.getElementById('jsonFileInput');
+      document.getElementById('btnLoadJson').addEventListener('click', () => {
+        backupDd.classList.add('hidden');
+        jsonInput.value = '';
+        jsonInput.click();
+      });
+      jsonInput.addEventListener('change', (e) => { if (e.target.files?.[0]) handleJsonRestore(e.target.files[0]); });
+    });
+  </script>
+</body>
+</html>
