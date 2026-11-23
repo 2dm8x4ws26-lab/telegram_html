@@ -2,238 +2,1146 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Онлайн-запись</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Онлайн-запись и Мини-CRM</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #f2f4f7);
+      --card: var(--tg-theme-secondary-bg-color, #ffffff);
+      --text: var(--tg-theme-text-color, #111827);
+      --hint: var(--tg-theme-hint-color, #6b7280);
+      --accent: var(--tg-theme-button-color, #2563eb);
+      --accent-text: var(--tg-theme-button-text-color, #ffffff);
+      --border: rgba(128, 128, 128, 0.16);
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warn: #d97706;
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       margin: 0;
-      padding: 16px;
-      background: var(--tg-theme-bg-color, #fff);
-      color: var(--tg-theme-text-color, #111);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding-bottom: calc(80px + env(safe-area-inset-bottom));
+      overflow-x: hidden;
     }
-    .field { margin-bottom: 14px; }
-    label { display: block; font-size: 13px; margin-bottom: 6px; opacity: 0.8; }
-    select, input {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid #ccc;
-      font-size: 15px;
-      background: var(--tg-theme-secondary-bg-color, #f6f7f9);
-      color: var(--tg-theme-text-color, #111);
+
+    .container { max-width: 560px; margin: 0 auto; padding: 12px 14px; }
+
+    /* Header */
+    .header {
+      position: sticky; top: 0; z-index: 20;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
-    .slots {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
+    .header-title { font-size: 17px; font-weight: 700; line-height: 1.2; }
+    .header-sub { font-size: 12px; color: var(--hint); }
+    .header-actions { display: flex; gap: 6px; align-items: center; }
+
+    /* Buttons */
+    .btn {
+      border: none; border-radius: 10px; padding: 9px 13px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      transition: opacity .15s, transform .1s;
     }
-    .slot {
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px solid #ccc;
-      background: transparent;
-      color: inherit;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    .slot.active {
-      background: var(--tg-theme-button-color, #2481cc);
-      color: var(--tg-theme-button-text-color, #fff);
-      border-color: transparent;
-    }
-    .slot:disabled {
-      opacity: 0.35;
-      cursor: not-allowed;
-    }
-    .submit {
-      width: 100%;
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--accent); color: var(--accent-text); }
+    .btn-soft { background: rgba(128,128,128,0.12); color: var(--text); }
+    .btn-success { background: rgba(22,163,74,0.14); color: var(--success); }
+    .btn-danger { background: rgba(220,38,38,0.12); color: var(--danger); }
+    .btn-warn { background: rgba(217,119,6,0.14); color: var(--warn); }
+    .btn-sm { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+    .btn-full { width: 100%; padding: 12px; font-size: 15px; }
+
+    /* Cards & Layout */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       padding: 13px;
-      border: none;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      background: var(--tg-theme-button-color, #2481cc);
-      color: var(--tg-theme-button-text-color, #fff);
+      margin-bottom: 10px;
     }
-    .msg { margin-top: 12px; font-size: 14px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .row-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+    .muted { color: var(--hint); font-size: 12px; }
+    .price { font-weight: 700; font-size: 15px; white-space: nowrap; }
+
+    /* Segmented control */
+    .segments {
+      display: flex; background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 3px; margin-bottom: 12px; gap: 3px;
+    }
+    .seg-btn {
+      flex: 1; border: none; background: transparent; color: var(--hint);
+      padding: 8px 6px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .seg-btn.active { background: var(--accent); color: var(--accent-text); }
+
+    /* Badges */
+    .badge {
+      display: inline-block; padding: 3px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+    }
+    .b-pending { background: rgba(217,119,6,0.15); color: var(--warn); }
+    .b-confirmed { background: rgba(37,99,235,0.14); color: var(--accent); }
+    .b-completed { background: rgba(22,163,74,0.14); color: var(--success); }
+    .b-cancelled, .b-no_show { background: rgba(220,38,38,0.14); color: var(--danger); }
+
+    .comment-box {
+      background: rgba(128,128,128,0.08);
+      border-radius: 8px; padding: 8px 10px; font-size: 12px;
+      color: var(--hint); margin: 8px 0;
+    }
+
+    /* Inputs */
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--hint); margin: 10px 0 4px; }
+    input, select, textarea {
+      width: 100%; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+      font-size: 14px; font-family: inherit;
+    }
+    textarea { resize: vertical; min-height: 68px; }
+
+    /* Bottom Nav */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+      background: var(--card); border-top: 1px solid var(--border);
+      display: flex; padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    }
+    .nav-item {
+      flex: 1; border: none; background: transparent; color: var(--hint);
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      font-size: 11px; font-weight: 600; cursor: pointer; padding: 4px 0;
+    }
+    .nav-item.active { color: var(--accent); }
+    .nav-icon { font-size: 18px; line-height: 1; }
+
+    /* Slots grid */
+    .slots-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+    .slot-btn {
+      padding: 10px 4px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--card); color: var(--text); font-weight: 600; font-size: 13px; cursor: pointer;
+    }
+    .slot-btn.selected { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+    /* Service selectable item */
+    .svc-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 12px; border-radius: 12px; border: 1.5px solid var(--border);
+      background: var(--card); margin-bottom: 8px; cursor: pointer;
+    }
+    .svc-item.selected { border-color: var(--accent); background: rgba(37,99,235,0.06); }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.48); z-index: 50;
+      display: none; align-items: flex-end; justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto;
+      background: var(--card); border-radius: 18px 18px 0 0;
+      padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+    }
+
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+    .stat-val { font-size: 20px; font-weight: 800; margin-top: 4px; }
+
+    .toast {
+      position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+      background: #111827; color: #fff; padding: 9px 14px; border-radius: 999px;
+      font-size: 13px; font-weight: 600; z-index: 100; display: none;
+    }
   </style>
 </head>
 <body>
-  <h2>Онлайн-запись</h2>
 
-  <div class="field">
-    <label>Услуга</label>
-    <select id="service"></select>
+<div class="header">
+  <div>
+    <div class="header-title" id="headerTitle">Записи</div>
+    <div class="header-sub" id="headerSub">Управление мини-CRM</div>
   </div>
-
-  <div class="field">
-    <label>Дата</label>
-    <input type="date" id="date" />
+  <div class="header-actions">
+    <button class="btn btn-soft btn-sm" id="syncBtn" onclick="syncFromSheets(true)" title="Обновить из таблицы">↻</button>
+    <button class="btn btn-soft btn-sm" id="roleToggleBtn" onclick="toggleRole()">Как клиент</button>
+    <button class="btn btn-primary btn-sm" id="topActionBtn" onclick="openNewBookingModal()">+ Запись</button>
   </div>
+</div>
 
-  <div class="field">
-    <label>Свободное время</label>
-    <div id="slots" class="slots"></div>
-  </div>
+<div class="container" id="app"></div>
+<div class="bottom-nav" id="bottomNav"></div>
+<div class="modal-backdrop" id="modalBackdrop" onclick="if(event.target===this) closeModal()">
+  <div class="modal" id="modalContent"></div>
+</div>
+<div class="toast" id="toast"></div>
 
-  <div class="field">
-    <label>Ваше имя</label>
-    <input type="text" id="name" placeholder="Например, Алексей" />
-  </div>
+<script>
+/* ===================== CONFIG (GOOGLE APPS SCRIPT) ===================== */
+const API_URL = ''; // Вставь сюда URL веб-приложения Apps Script (.../exec)
+const OWNER_TELEGRAM_ID = null; // Например, 123456789 — если задан, админка видна только владельцу
 
-  <div class="field">
-    <label>Телефон или @username</label>
-    <input type="text" id="contact" placeholder="@username или +7..." />
-  </div>
+/* ===================== TELEGRAM SDK ===================== */
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+}
+function haptic(type = 'light') {
+  try { tg?.HapticFeedback?.impactOccurred(type); } catch {}
+}
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(window._toastT);
+  window._toastT = setTimeout(() => el.style.display = 'none', 2300);
+}
 
-  <button class="submit" id="submitBtn">Записаться</button>
-  <div class="msg" id="msg"></div>
+/* ===================== HELPERS ===================== */
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const addDaysStr = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const fmtRub = (n) => Number(n || 0).toLocaleString('ru-RU') + ' ₽';
+const toMin = (hhmm) => { const [h, m] = String(hhmm).split(':').map(Number); return h * 60 + m; };
+const fromMin = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const uid = () => Math.random().toString(36).slice(2, 10);
 
-  <script>
-    const API_URL = 'ВСТАВЬ_СЮДА_URL_ВЕБ_ПРИЛОЖЕНИЯ_APPS_SCRIPT';
-    const tg = window.Telegram && window.Telegram.WebApp;
-    if (tg) {
-      tg.ready();
-      tg.expand();
-      const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
-      if (user) {
-        document.getElementById('name').value = [user.first_name, user.last_name].filter(Boolean).join(' ');
-        if (user.username) document.getElementById('contact').value = '@' + user.username;
-      }
-    }
+const STATUS_LABEL = {
+  pending: 'Ожидает',
+  confirmed: 'Запланировано',
+  completed: 'Выполнено',
+  cancelled: 'Отменено',
+  no_show: 'Не пришёл'
+};
 
-    let state = { services: [], schedule: [], bookings: [], selectedTime: '' };
+/* ===================== STORE (localStorage + Sheets sync) ===================== */
+const STORAGE_KEY = 'tma_crm_v1';
+const DEFAULT_DB = {
+  settings: {
+    timezoneLabel: 'МСК',
+    workStart: '10:00',
+    workEnd: '20:00',
+    breakStart: '13:00',
+    breakEnd: '14:00',
+    slotStep: 30,
+    bufferMin: 15,
+    horizonDays: 30,
+    minLeadHours: 2,
+    cancelLimitHours: 4,
+    autoConfirm: true,
+    masterTelegram: 'master_support',
+    address: 'Москва, ул. Примерная, д. 10'
+  },
+  services: [
+    { id: 's1', category: 'Основные', title: 'Маникюр с покрытием', price: 2400, duration: 90, active: true },
+    { id: 's2', category: 'Основные', title: 'Консультация / разбор', price: 3500, duration: 60, active: true },
+    { id: 's3', category: 'Основные', title: 'Индивидуальное занятие', price: 2000, duration: 60, active: true },
+    { id: 's4', category: 'Дополнительно', title: 'Снятие покрытия', price: 500, duration: 30, active: true }
+  ],
+  clients: [
+    { id: 'c1', telegramId: 1001, username: 'anna_smirnova', name: 'Анна Смирнова', phone: '+7 999 111-22-33', notes: 'Любит нюдовые оттенки, аллергии нет', blocked: false },
+    { id: 'c2', telegramId: 1002, username: 'maxim_orlov', name: 'Максим Орлов', phone: '+7 999 222-33-44', notes: 'Первичный разбор задач, 60 минут', blocked: false },
+    { id: 'c3', telegramId: null, username: '', name: 'Елена Козлова', phone: '+7 999 333-44-55', notes: 'Записалась по телефону', blocked: false }
+  ],
+  appointments: [
+    { id: 'a1', clientId: 'c1', clientName: 'Анна Смирнова', clientPhone: '+7 999 111-22-33', date: todayStr(), time: '10:30', duration: 90, buffer: 15, totalPrice: 2400, status: 'completed', comment: 'Нюдовый оттенок, снятие старого покрытия', services: [{ id: 's1', title: 'Маникюр с покрытием', price: 2400, duration: 90 }] },
+    { id: 'a2', clientId: 'c2', clientName: 'Максим Орлов', clientPhone: '+7 999 222-33-44', date: todayStr(), time: '14:00', duration: 60, buffer: 15, totalPrice: 3500, status: 'confirmed', comment: 'Первичный разбор задач, 60 минут', services: [{ id: 's2', title: 'Консультация / разбор', price: 3500, duration: 60 }] },
+    { id: 'a3', clientId: 'c3', clientName: 'Елена Козлова', clientPhone: '+7 999 333-44-55', date: todayStr(), time: '17:30', duration: 60, buffer: 15, totalPrice: 2000, status: 'confirmed', comment: 'Онлайн-созвон, отправить материалы заранее', services: [{ id: 's3', title: 'Индивидуальное занятие', price: 2000, duration: 60 }] }
+  ],
+  blockedSlots: []
+};
 
-    const dateInput = document.getElementById('date');
-    const today = new Date().toISOString().slice(0, 10);
-    dateInput.value = today;
-    dateInput.min = today;
+let db = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || structuredClone(DEFAULT_DB);
+function saveDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
 
-    async function loadData() {
-      document.getElementById('msg').textContent = 'Загружаем расписание...';
-      const res = await fetch(`${API_URL}?action=init`);
-      const data = await res.json();
-      state.services = data.services || [];
-      state.schedule = data.schedule || [];
-      state.bookings = data.bookings || [];
-
-      const select = document.getElementById('service');
-      select.innerHTML = state.services.map(s =>
-        `<option value="${s.name}" data-price="${s.price}">${s.name} — ${s.price} ₽ (${s.duration} мин)</option>`
-      ).join('');
-
-      document.getElementById('msg').textContent = '';
-      renderSlots();
-    }
-
-    function getSlotsForDate(dateStr) {
-      if (!dateStr) return [];
-      const d = new Date(dateStr + 'T00:00:00');
-      // 1 = Пн ... 7 = Вс
-      const jsDay = d.getDay();
-      const dayNum = jsDay === 0 ? 7 : jsDay;
-      const dayNames = { 1: 'пн', 2: 'вт', 3: 'ср', 4: 'чт', 5: 'пт', 6: 'сб', 7: 'вс' };
-
-      const rule = state.schedule.find(r => {
-        const val = String(r.day).trim().toLowerCase();
-        return val === String(dayNum) || val === dayNames[dayNum];
-      });
-
-      if (!rule || rule.dayOff) return [];
-
-      const [sh, sm] = String(rule.start).split(':').map(Number);
-      const [eh, em] = String(rule.end).split(':').map(Number);
-      const step = Number(rule.step) || 60;
-
-      let cur = sh * 60 + sm;
-      const end = eh * 60 + em;
-      const slots = [];
-
-      while (cur + step <= end) {
-        const hh = String(Math.floor(cur / 60)).padStart(2, '0');
-        const mm = String(cur % 60).padStart(2, '0');
-        slots.push(`${hh}:${mm}`);
-        cur += step;
-      }
-      return slots;
-    }
-
-    function renderSlots() {
-      const dateStr = dateInput.value;
-      const allSlots = getSlotsForDate(dateStr);
-      const busy = new Set(
-        state.bookings.filter(b => b.date === dateStr).map(b => b.time)
-      );
-      state.selectedTime = '';
-
-      const container = document.getElementById('slots');
-      if (!allSlots.length) {
-        container.innerHTML = '<div style="grid-column: 1 / -1; opacity: 0.7;">В этот день записи нет</div>';
-        return;
-      }
-
-      container.innerHTML = allSlots.map(time => {
-        const isBusy = busy.has(time);
-        return `<button type="button" class="slot" ${isBusy ? 'disabled' : ''} data-time="${time}">${time}</button>`;
-      }).join('');
-
-      container.querySelectorAll('.slot:not(:disabled)').forEach(btn => {
-        btn.addEventListener('click', () => {
-          container.querySelectorAll('.slot').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          state.selectedTime = btn.dataset.time;
-        });
-      });
-    }
-
-    dateInput.addEventListener('change', renderSlots);
-
-    document.getElementById('submitBtn').addEventListener('click', async () => {
-      const select = document.getElementById('service');
-      const opt = select.options[select.selectedIndex];
-      const name = document.getElementById('name').value.trim();
-      const contact = document.getElementById('contact').value.trim();
-      const msgEl = document.getElementById('msg');
-
-      if (!opt || !dateInput.value || !state.selectedTime || !name) {
-        msgEl.textContent = 'Выберите услугу, дату, время и укажите имя.';
-        return;
-      }
-
-      const payload = {
-        action: 'book',
-        service: opt.value,
-        price: opt.dataset.price || '',
-        date: dateInput.value,
-        time: state.selectedTime,
-        name,
-        contact
-      };
-
-      msgEl.textContent = 'Отправляем заявку...';
-      try {
-        const res = await fetch(API_URL, {
-          method: 'POST',
-          body: JSON.stringify(payload)
-        });
-        const result = await res.json();
-        if (result.ok) {
-          msgEl.textContent = 'Запись подтверждена!';
-          state.bookings.push({ date: payload.date, time: payload.time });
-          renderSlots();
-        } else {
-          msgEl.textContent = result.error || 'Не удалось записаться.';
-        }
-      } catch (e) {
-        msgEl.textContent = 'Ошибка соединения.';
-      }
+async function apiPost(payload) {
+  if (!API_URL) return { ok: true, localOnly: true };
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload)
     });
+    return await res.json();
+  } catch (err) {
+    console.warn('API POST error:', err);
+    toast('Сохранено локально (нет связи с таблицей)');
+    return { ok: false, error: err.message };
+  }
+}
 
-    loadData();
-  </script>
+async function syncFromSheets(showNotice = false) {
+  if (!API_URL) {
+    if (showNotice) toast('Локальный режим (API_URL не задан)');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}?action=sync`);
+    const data = await res.json();
+    if (!data.ok) return;
+
+    if (Array.isArray(data.services) && data.services.length) {
+      db.services = data.services;
+    }
+    if (Array.isArray(data.blockedSlots)) {
+      db.blockedSlots = data.blockedSlots;
+    }
+    if (data.settings && Object.keys(data.settings).length) {
+      const s = data.settings;
+      db.settings = {
+        ...db.settings,
+        timezoneLabel: s.timezoneLabel ?? db.settings.timezoneLabel,
+        workStart: s.workStart ?? db.settings.workStart,
+        workEnd: s.workEnd ?? db.settings.workEnd,
+        breakStart: s.breakStart ?? db.settings.breakStart,
+        breakEnd: s.breakEnd ?? db.settings.breakEnd,
+        slotStep: Number(s.slotStep ?? db.settings.slotStep),
+        bufferMin: Number(s.bufferMin ?? db.settings.bufferMin),
+        horizonDays: Number(s.horizonDays ?? db.settings.horizonDays),
+        minLeadHours: Number(s.minLeadHours ?? db.settings.minLeadHours),
+        cancelLimitHours: Number(s.cancelLimitHours ?? db.settings.cancelLimitHours),
+        autoConfirm: String(s.autoConfirm ?? db.settings.autoConfirm) !== 'false',
+        masterTelegram: s.masterTelegram ?? db.settings.masterTelegram,
+        address: s.address ?? db.settings.address
+      };
+    }
+    if (Array.isArray(data.appointments)) {
+      db.appointments = data.appointments.map(a => {
+        let client = db.clients.find(c =>
+          (a.telegramId && String(c.telegramId) === String(a.telegramId)) ||
+          (a.clientPhone && c.phone === a.clientPhone) ||
+          (a.clientName && c.name === a.clientName)
+        );
+        if (!client && a.clientName) {
+          client = {
+            id: 'cl_' + uid(),
+            telegramId: a.telegramId || null,
+            username: a.username || '',
+            name: a.clientName,
+            phone: a.clientPhone || '',
+            notes: '',
+            blocked: false
+          };
+          db.clients.push(client);
+        }
+        return { ...a, clientId: client?.id || a.clientId };
+      });
+    }
+
+    saveDB();
+    render();
+    if (showNotice) toast('Данные обновлены из Google Таблицы');
+  } catch (err) {
+    console.warn('Sync error:', err);
+    if (showNotice) toast('Не удалось обновить из таблицы');
+  }
+}
+
+/* ===================== APP STATE ===================== */
+const tgUserId = tg?.initDataUnsafe?.user?.id || null;
+const canUseAdmin = !OWNER_TELEGRAM_ID || !tgUserId || Number(tgUserId) === Number(OWNER_TELEGRAM_ID);
+
+const state = {
+  role: canUseAdmin ? 'admin' : 'client',
+  adminTab: 'schedule',
+  clientTab: 'book',
+  scheduleFilter: 'today',
+  scheduleDate: todayStr(),
+  clientSearch: '',
+  financePeriod: 'month',
+  bookingStep: 1,
+  selectedServiceIds: [],
+  selectedDate: todayStr(),
+  selectedSlot: null,
+  bookingName: tg?.initDataUnsafe?.user?.first_name || 'Гость',
+  bookingPhone: '',
+  bookingComment: '',
+  myTab: 'upcoming'
+};
+
+function getCurrentClient() {
+  const tgUser = tg?.initDataUnsafe?.user;
+  const tgId = tgUser?.id || 1001;
+  let client = db.clients.find(c => String(c.telegramId) === String(tgId));
+  if (!client) {
+    client = {
+      id: uid(), telegramId: tgId, username: tgUser?.username || '',
+      name: [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || 'Клиент Telegram',
+      phone: '', notes: '', blocked: false
+    };
+    db.clients.push(client);
+    saveDB();
+  }
+  return client;
+}
+
+/* ===================== SLOT ENGINE ===================== */
+function getFreeSlots(dateStr, durationMin, excludeApptId = null) {
+  const s = db.settings;
+  const start = toMin(s.workStart);
+  const end = toMin(s.workEnd);
+  const brkStart = s.breakStart ? toMin(s.breakStart) : null;
+  const brkEnd = s.breakEnd ? toMin(s.breakEnd) : null;
+  const step = Number(s.slotStep) || 30;
+  const buf = Number(s.bufferMin) || 0;
+
+  const busy = db.appointments
+    .filter(a => a.date === dateStr && a.id !== excludeApptId && ['pending', 'confirmed'].includes(a.status))
+    .map(a => ({ start: toMin(a.time), end: toMin(a.time) + a.duration + (a.buffer || 0) }));
+
+  db.blockedSlots
+    .filter(b => b.date === dateStr)
+    .forEach(b => busy.push({ start: toMin(b.start), end: toMin(b.end) }));
+
+  const now = new Date();
+  const isToday = dateStr === todayStr();
+  const minAllowedMin = isToday ? (now.getHours() * 60 + now.getMinutes() + (Number(s.minLeadHours) || 0) * 60) : -1;
+
+  const slots = [];
+  for (let t = start; t + durationMin <= end; t += step) {
+    if (isToday && t < minAllowedMin) continue;
+    const slotEndWithBuf = t + durationMin + buf;
+    const hitsBreak = brkStart !== null && brkEnd !== null && (t < brkEnd && (t + durationMin) > brkStart);
+    if (hitsBreak) continue;
+    const hitsBusy = busy.some(b => t < b.end && slotEndWithBuf > b.start);
+    if (!hitsBusy) slots.push(fromMin(t));
+  }
+  return slots;
+}
+
+/* ===================== RENDER ROUTER ===================== */
+function toggleRole() {
+  if (!canUseAdmin) return toast('Режим администратора недоступен');
+  haptic('medium');
+  state.role = state.role === 'admin' ? 'client' : 'admin';
+  state.bookingStep = 1;
+  render();
+}
+
+function render() {
+  const isAdmin = state.role === 'admin' && canUseAdmin;
+  const roleBtn = document.getElementById('roleToggleBtn');
+  roleBtn.style.display = canUseAdmin ? 'inline-flex' : 'none';
+  roleBtn.textContent = isAdmin ? 'Как клиент' : 'В админку';
+  document.getElementById('topActionBtn').style.display = isAdmin ? 'inline-flex' : 'none';
+
+  if (isAdmin) {
+    const titles = {
+      schedule: ['Записи', 'Управление мини-CRM'],
+      clients: ['Клиенты', `Всего в базе: ${db.clients.length}`],
+      services: ['Услуги и график', 'Настройки записи'],
+      finance: ['Финансы', 'Аналитика и экспорт']
+    };
+    document.getElementById('headerTitle').textContent = titles[state.adminTab][0];
+    document.getElementById('headerSub').textContent = titles[state.adminTab][1];
+    renderAdminNav();
+    if (state.adminTab === 'schedule') renderAdminSchedule();
+    if (state.adminTab === 'clients') renderAdminClients();
+    if (state.adminTab === 'services') renderAdminServices();
+    if (state.adminTab === 'finance') renderAdminFinance();
+  } else {
+    document.getElementById('headerTitle').textContent = state.clientTab === 'book' ? 'Онлайн-запись' : 'Мои записи';
+    document.getElementById('headerSub').textContent = db.settings.address;
+    renderClientNav();
+    if (state.clientTab === 'book') renderClientBooking();
+    else renderClientMyBookings();
+  }
+}
+
+function renderAdminNav() {
+  const tabs = [
+    ['schedule', '📅', 'Записи'],
+    ['clients', '👥', 'Клиенты'],
+    ['services', '⚙️', 'Услуги'],
+    ['finance', '📊', 'Финансы']
+  ];
+  document.getElementById('bottomNav').innerHTML = tabs.map(([id, icon, label]) => `
+    <button class="nav-item ${state.adminTab === id ? 'active' : ''}" onclick="state.adminTab='${id}';haptic();render()">
+      <span class="nav-icon">${icon}</span><span>${label}</span>
+    </button>
+  `).join('');
+}
+
+function renderClientNav() {
+  const tabs = [
+    ['book', '✨', 'Записаться'],
+    ['my', '📋', 'Мои записи']
+  ];
+  document.getElementById('bottomNav').innerHTML = tabs.map(([id, icon, label]) => `
+    <button class="nav-item ${state.clientTab === id ? 'active' : ''}" onclick="state.clientTab='${id}';haptic();render()">
+      <span class="nav-icon">${icon}</span><span>${label}</span>
+    </button>
+  `).join('');
+}
+
+/* ===================== ADMIN: SCHEDULE ===================== */
+function renderAdminSchedule() {
+  let list = [...db.appointments];
+  if (state.scheduleFilter === 'today') list = list.filter(a => a.date === todayStr());
+  if (state.scheduleFilter === 'tomorrow') list = list.filter(a => a.date === addDaysStr(1));
+  if (state.scheduleFilter === 'date') list = list.filter(a => a.date === state.scheduleDate);
+  list.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+
+  const activeSum = list.filter(a => a.status !== 'cancelled' && a.status !== 'no_show').reduce((s, a) => s + Number(a.totalPrice), 0);
+
+  let html = `
+    <div class="segments">
+      <button class="seg-btn ${state.scheduleFilter==='today'?'active':''}" onclick="state.scheduleFilter='today';render()">Сегодня</button>
+      <button class="seg-btn ${state.scheduleFilter==='tomorrow'?'active':''}" onclick="state.scheduleFilter='tomorrow';render()">Завтра</button>
+      <button class="seg-btn ${state.scheduleFilter==='date'?'active':''}" onclick="state.scheduleFilter='date';render()">Дата</button>
+      <button class="seg-btn ${state.scheduleFilter==='all'?'active':''}" onclick="state.scheduleFilter='all';render()">Все</button>
+    </div>
+  `;
+
+  if (state.scheduleFilter === 'date') {
+    html += `<div class="card"><input type="date" value="${state.scheduleDate}" onchange="state.scheduleDate=this.value;render()"></div>`;
+  }
+
+  html += `
+    <div class="card row">
+      <div>
+        <div class="muted">${state.scheduleFilter==='today'?'СЕГОДНЯ':state.scheduleFilter==='tomorrow'?'ЗАВТРА':'ВЫБРАНО'}</div>
+        <div style="font-weight:700;font-size:16px">${list.length} записей</div>
+      </div>
+      <div style="text-align:right">
+        <div class="muted">Сумма</div>
+        <div style="font-weight:800;font-size:16px;color:var(--accent)">${fmtRub(activeSum)}</div>
+      </div>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn btn-soft btn-sm" onclick="openBlockSlotModal()">🔒 Заблокировать время</button>
+      ${db.blockedSlots.length ? `<span class="muted">Блокировок: ${db.blockedSlots.length}</span>` : ''}
+    </div>
+  `;
+
+  if (!list.length) {
+    html += `<div class="card muted" style="text-align:center;padding:28px">На выбранный период записей нет</div>`;
+  }
+
+  list.forEach(a => {
+    const client = db.clients.find(c => c.id === a.clientId) || { name: a.clientName || 'Клиент', phone: a.clientPhone || '' };
+    const svcNames = a.services.map(s => s.title).join(', ');
+    html += `
+      <div class="card">
+        <div class="row" style="align-items:flex-start">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="background:rgba(128,128,128,0.1);padding:6px 8px;border-radius:8px;font-weight:700;font-size:13px;text-align:center">
+              ${a.time}<div class="muted" style="font-size:10px">${a.date.slice(5)}</div>
+            </div>
+            <div>
+              <div style="font-weight:700;font-size:15px">${client.name}</div>
+              <div class="muted">${svcNames} (${a.duration} мин)</div>
+              <div class="row-wrap" style="margin-top:4px">
+                ${client.username ? `<a href="https://t.me/${client.username}" target="_blank" class="muted" style="color:var(--accent);text-decoration:none">@${client.username}</a>` : ''}
+                ${client.phone ? `<a href="tel:${client.phone}" class="muted" style="text-decoration:none">${client.phone}</a>` : ''}
+              </div>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="price">${fmtRub(a.totalPrice)}</div>
+            <span class="badge b-${a.status}">${STATUS_LABEL[a.status]}</span>
+          </div>
+        </div>
+        ${a.comment ? `<div class="comment-box">${a.comment}</div>` : ''}
+        <div class="row-wrap" style="margin-top:10px">
+          ${a.status !== 'completed' ? `<button class="btn btn-success btn-sm" style="flex:1" onclick="setApptStatus('${a.id}','completed')">Выполнено ✓</button>` : `<button class="btn btn-soft btn-sm" style="flex:1" onclick="setApptStatus('${a.id}','confirmed')">Вернуть в план</button>`}
+          ${a.status !== 'no_show' ? `<button class="btn btn-warn btn-sm" onclick="setApptStatus('${a.id}','no_show')">Не пришёл ✗</button>` : ''}
+          <button class="btn btn-soft btn-sm" onclick="openEditBookingModal('${a.id}')">Изменить</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAppt('${a.id}')">🗑</button>
+        </div>
+      </div>
+    `;
+  });
+
+  document.getElementById('app').innerHTML = html;
+}
+
+async function setApptStatus(id, status) {
+  const a = db.appointments.find(x => x.id === id);
+  if (!a) return;
+  a.status = status;
+  saveDB();
+  haptic('medium');
+  toast(`Статус обновлён: ${STATUS_LABEL[status]}`);
+  render();
+  await apiPost({ action: 'update_status', id, status });
+}
+
+function deleteAppt(id) {
+  if (!confirm('Удалить запись?')) return;
+  db.appointments = db.appointments.filter(x => x.id !== id);
+  saveDB();
+  haptic('medium');
+  render();
+}
+
+/* ===================== ADMIN: CLIENTS ===================== */
+function renderAdminClients() {
+  const q = state.clientSearch.toLowerCase();
+  const clients = db.clients.filter(c =>
+    c.name.toLowerCase().includes(q) ||
+    (c.phone || '').toLowerCase().includes(q) ||
+    (c.username || '').toLowerCase().includes(q)
+  );
+
+  let html = `
+    <div class="card">
+      <input type="text" placeholder="Поиск по имени, телефону или @username..." value="${state.clientSearch}" oninput="state.clientSearch=this.value;renderAdminClientsList()">
+    </div>
+    <div id="clientsList"></div>
+  `;
+  document.getElementById('app').innerHTML = html;
+  renderAdminClientsList();
+}
+
+function renderAdminClientsList() {
+  const q = state.clientSearch.toLowerCase();
+  const clients = db.clients.filter(c =>
+    c.name.toLowerCase().includes(q) ||
+    (c.phone || '').toLowerCase().includes(q) ||
+    (c.username || '').toLowerCase().includes(q)
+  );
+  const el = document.getElementById('clientsList');
+  if (!el) return;
+  el.innerHTML = clients.map(c => {
+    const appts = db.appointments.filter(a => a.clientId === c.id);
+    const completed = appts.filter(a => a.status === 'completed');
+    const ltv = completed.reduce((s, a) => s + Number(a.totalPrice), 0);
+    const noShows = appts.filter(a => a.status === 'no_show').length;
+    return `
+      <div class="card" onclick="openClientModal('${c.id}')" style="cursor:pointer">
+        <div class="row">
+          <div>
+            <div style="font-weight:700">${c.name} ${c.blocked ? '<span class="badge b-cancelled">ЧС</span>' : ''}</div>
+            <div class="muted">${c.phone || 'Нет телефона'} ${c.username ? '• @'+c.username : ''}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="price">${fmtRub(ltv)}</div>
+            <div class="muted">Визитов: ${completed.length} ${noShows ? `• Неявок: ${noShows}` : ''}</div>
+          </div>
+        </div>
+        ${c.notes ? `<div class="comment-box" style="margin-bottom:0">${c.notes}</div>` : ''}
+      </div>
+    `;
+  }).join('') || `<div class="card muted" style="text-align:center">Клиенты не найдены</div>`;
+}
+
+function openClientModal(clientId) {
+  const c = db.clients.find(x => x.id === clientId);
+  if (!c) return;
+  const appts = db.appointments.filter(a => a.clientId === c.id).sort((a,b) => (b.date+b.time).localeCompare(a.date+a.time));
+  openModal(`
+    <div class="row" style="margin-bottom:10px">
+      <h3 style="margin:0">${c.name}</h3>
+      <button class="btn btn-soft btn-sm" onclick="closeModal()">✕</button>
+    </div>
+    <div class="row-wrap" style="margin-bottom:10px">
+      ${c.username ? `<a class="btn btn-primary btn-sm" href="https://t.me/${c.username}" target="_blank" style="text-decoration:none">Telegram</a>` : ''}
+      ${c.phone ? `<a class="btn btn-soft btn-sm" href="tel:${c.phone}" style="text-decoration:none">Позвонить</a>` : ''}
+      <button class="btn ${c.blocked?'btn-success':'btn-danger'} btn-sm" onclick="toggleBlockClient('${c.id}')">${c.blocked ? 'Убрать из ЧС' : 'В чёрный список'}</button>
+    </div>
+    <label>Личные заметки мастера (клиент не видит)</label>
+    <textarea id="clientNotesInput">${c.notes || ''}</textarea>
+    <button class="btn btn-primary btn-full" style="margin-top:8px" onclick="saveClientNotes('${c.id}')">Сохранить заметку</button>
+    <label style="margin-top:14px">История записей (${appts.length})</label>
+    ${appts.map(a => `
+      <div class="comment-box row">
+        <div><b>${a.date} ${a.time}</b> — ${a.services.map(s=>s.title).join(', ')}</div>
+        <span class="badge b-${a.status}">${STATUS_LABEL[a.status]}</span>
+      </div>
+    `).join('') || '<div class="muted">Записей пока нет</div>'}
+  `);
+}
+
+function saveClientNotes(id) {
+  const c = db.clients.find(x => x.id === id);
+  c.notes = document.getElementById('clientNotesInput').value.trim();
+  saveDB();
+  toast('Заметка сохранена');
+  closeModal();
+  render();
+}
+
+function toggleBlockClient(id) {
+  const c = db.clients.find(x => x.id === id);
+  c.blocked = !c.blocked;
+  saveDB();
+  toast(c.blocked ? 'Клиент добавлен в ЧС' : 'Клиент разблокирован');
+  openClientModal(id);
+  renderAdminClientsList();
+}
+
+/* ===================== ADMIN: SERVICES & SETTINGS ===================== */
+function renderAdminServices() {
+  const s = db.settings;
+  let html = `
+    <div class="row" style="margin-bottom:8px">
+      <div style="font-weight:700">Услуги</div>
+      <button class="btn btn-primary btn-sm" onclick="openServiceModal()">+ Добавить услугу</button>
+    </div>
+    ${db.services.map(svc => `
+      <div class="card row" style="opacity:${svc.active ? 1 : 0.55}">
+        <div>
+          <div style="font-weight:700">${svc.title} ${!svc.active ? '<span class="badge b-cancelled">Архив</span>' : ''}</div>
+          <div class="muted">${svc.category} • ${svc.duration} мин</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="price">${fmtRub(svc.price)}</div>
+          <button class="btn btn-soft btn-sm" onclick="openServiceModal('${svc.id}')">✎</button>
+        </div>
+      </div>
+    `).join('')}
+
+    <div class="card" style="margin-top:14px">
+      <div style="font-weight:700;margin-bottom:6px">График и правила записи</div>
+      <div class="row">
+        <div style="flex:1"><label>Начало дня</label><input type="time" id="st_start" value="${s.workStart}"></div>
+        <div style="flex:1"><label>Конец дня</label><input type="time" id="st_end" value="${s.workEnd}"></div>
+      </div>
+      <div class="row">
+        <div style="flex:1"><label>Перерыв с</label><input type="time" id="st_bstart" value="${s.breakStart}"></div>
+        <div style="flex:1"><label>Перерыв до</label><input type="time" id="st_bend" value="${s.breakEnd}"></div>
+      </div>
+      <div class="row">
+        <div style="flex:1"><label>Шаг сетки (мин)</label><input type="number" id="st_step" value="${s.slotStep}"></div>
+        <div style="flex:1"><label>Буфер (мин)</label><input type="number" id="st_buf" value="${s.bufferMin}"></div>
+      </div>
+      <div class="row">
+        <div style="flex:1"><label>Запрет отмены за (ч)</label><input type="number" id="st_cancel" value="${s.cancelLimitHours}"></div>
+        <div style="flex:1"><label>Часовой пояс</label><input type="text" id="st_tz" value="${s.timezoneLabel}"></div>
+      </div>
+      <label>Адрес</label>
+      <input type="text" id="st_addr" value="${s.address}">
+      <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="saveSettings()">Сохранить настройки</button>
+    </div>
+  `;
+  document.getElementById('app').innerHTML = html;
+}
+
+async function saveSettings() {
+  db.settings.workStart = document.getElementById('st_start').value;
+  db.settings.workEnd = document.getElementById('st_end').value;
+  db.settings.breakStart = document.getElementById('st_bstart').value;
+  db.settings.breakEnd = document.getElementById('st_bend').value;
+  db.settings.slotStep = Number(document.getElementById('st_step').value) || 30;
+  db.settings.bufferMin = Number(document.getElementById('st_buf').value) || 0;
+  db.settings.cancelLimitHours = Number(document.getElementById('st_cancel').value) || 0;
+  db.settings.timezoneLabel = document.getElementById('st_tz').value.trim() || 'МСК';
+  db.settings.address = document.getElementById('st_addr').value.trim();
+  saveDB();
+  haptic('medium');
+  toast('Настройки сохранены');
+  await apiPost({ action: 'save_settings', settings: db.settings });
+}
+
+function openServiceModal(id = null) {
+  const svc = id ? db.services.find(x => x.id === id) : { title: '', category: 'Основные', price: 2000, duration: 60, active: true };
+  openModal(`
+    <div class="row"><h3 style="margin:0">${id ? 'Редактировать услугу' : 'Новая услуга'}</h3><button class="btn btn-soft btn-sm" onclick="closeModal()">✕</button></div>
+    <label>Название</label><input id="sv_title" value="${svc.title}">
+    <label>Категория</label><input id="sv_cat" value="${svc.category}">
+    <div class="row">
+      <div style="flex:1"><label>Цена (₽)</label><input type="number" id="sv_price" value="${svc.price}"></div>
+      <div style="flex:1"><label>Длительность (мин)</label><input type="number" id="sv_dur" value="${svc.duration}"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn btn-primary" style="flex:1" onclick="saveService('${id || ''}')">Сохранить</button>
+      ${id ? `<button class="btn btn-soft" onclick="toggleArchiveService('${id}')">${svc.active ? 'В архив' : 'Восстановить'}</button>` : ''}
+    </div>
+  `);
+}
+
+async function saveService(id) {
+  const data = {
+    title: document.getElementById('sv_title').value.trim(),
+    category: document.getElementById('sv_cat').value.trim() || 'Основные',
+    price: Number(document.getElementById('sv_price').value) || 0,
+    duration: Number(document.getElementById('sv_dur').value) || 30
+  };
+  if (!data.title) return toast('Введите название услуги');
+  if (id) Object.assign(db.services.find(x => x.id === id), data);
+  else db.services.push({ id: uid(), ...data, active: true });
+  saveDB();
+  closeModal();
+  render();
+  await apiPost({ action: 'save_services', services: db.services });
+}
+
+async function toggleArchiveService(id) {
+  const svc = db.services.find(x => x.id === id);
+  svc.active = !svc.active;
+  saveDB();
+  closeModal();
+  render();
+  await apiPost({ action: 'save_services', services: db.services });
+}
+
+/* ===================== ADMIN: FINANCE ===================== */
+function renderAdminFinance() {
+  const now = todayStr();
+  const list = db.appointments.filter(a => {
+    if (state.financePeriod === 'day') return a.date === now;
+    if (state.financePeriod === 'week') return a.date >= addDaysStr(-7);
+    if (state.financePeriod === 'month') return a.date.slice(0, 7) === now.slice(0, 7);
+    return true;
+  });
+
+  const completed = list.filter(a => a.status === 'completed');
+  const planned = list.filter(a => ['pending', 'confirmed'].includes(a.status));
+  const factSum = completed.reduce((s, a) => s + Number(a.totalPrice), 0);
+  const planSum = planned.reduce((s, a) => s + Number(a.totalPrice), 0);
+  const avg = completed.length ? Math.round(factSum / completed.length) : 0;
+
+  const byService = {};
+  completed.forEach(a => a.services.forEach(s => {
+    byService[s.title] = (byService[s.title] || 0) + Number(s.price);
+  }));
+  const topServices = Object.entries(byService).sort((a, b) => b[1] - a[1]);
+
+  document.getElementById('app').innerHTML = `
+    <div class="segments">
+      <button class="seg-btn ${state.financePeriod==='day'?'active':''}" onclick="state.financePeriod='day';render()">День</button>
+      <button class="seg-btn ${state.financePeriod==='week'?'active':''}" onclick="state.financePeriod='week';render()">Неделя</button>
+      <button class="seg-btn ${state.financePeriod==='month'?'active':''}" onclick="state.financePeriod='month';render()">Месяц</button>
+      <button class="seg-btn ${state.financePeriod==='all'?'active':''}" onclick="state.financePeriod='all';render()">Всё</button>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card"><div class="muted">Заработано (факт)</div><div class="stat-val" style="color:var(--success)">${fmtRub(factSum)}</div></div>
+      <div class="stat-card"><div class="muted">В плане</div><div class="stat-val" style="color:var(--accent)">${fmtRub(planSum)}</div></div>
+      <div class="stat-card"><div class="muted">Средний чек</div><div class="stat-val">${fmtRub(avg)}</div></div>
+      <div class="stat-card"><div class="muted">Визиты / Неявки</div><div class="stat-val">${completed.length} / ${list.filter(a=>a.status==='no_show').length}</div></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:8px">Топ услуг по выручке</div>
+      ${topServices.map(([name, sum]) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--border)"><span>${name}</span><b>${fmtRub(sum)}</b></div>`).join('') || '<div class="muted">Нет завершённых визитов за период</div>'}
+    </div>
+
+    <button class="btn btn-primary btn-full" onclick="exportCSV()">📥 Экспорт в CSV (Excel)</button>
+  `;
+}
+
+function exportCSV() {
+  const rows = [['Дата', 'Время', 'Клиент', 'Телефон', 'Услуги', 'Сумма', 'Статус', 'Комментарий']];
+  db.appointments.forEach(a => {
+    const c = db.clients.find(x => x.id === a.clientId) || {};
+    rows.push([a.date, a.time, c.name || a.clientName || '', c.phone || a.clientPhone || '', a.services.map(s=>s.title).join('; '), a.totalPrice, STATUS_LABEL[a.status], (a.comment || '').replace(/[\r\n]+/g, ' ')]);
+  });
+  const csv = '\uFEFF' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `crm_export_${todayStr()}.csv`;
+  link.click();
+  toast('CSV-файл скачан');
+}
+
+/* ===================== ADMIN: MODALS (NEW / EDIT / BLOCK) ===================== */
+function openNewBookingModal(editId = null) {
+  const a = editId ? db.appointments.find(x => x.id === editId) : null;
+  const activeServices = db.services.filter(s => s.active);
+  openModal(`
+    <div class="row"><h3 style="margin:0">${a ? 'Изменить запись' : 'Новая запись (вручную)'}</h3><button class="btn btn-soft btn-sm" onclick="closeModal()">✕</button></div>
+    <label>Клиент из базы</label>
+    <select id="nb_client" onchange="document.getElementById('nb_new_client_wrap').style.display=this.value==='__new__'?'block':'none'">
+      <option value="__new__">+ Новый клиент (без Telegram)</option>
+      ${db.clients.map(c => `<option value="${c.id}" ${a?.clientId===c.id?'selected':''}>${c.name} (${c.phone || 'без тел.'})</option>`).join('')}
+    </select>
+    <div id="nb_new_client_wrap" style="display:${a ? 'none' : 'block'}">
+      <label>Имя нового клиента</label><input id="nb_cname" placeholder="Иван Иванов">
+      <label>Телефон</label><input id="nb_cphone" placeholder="+7 999 000-00-00">
+    </div>
+    <label>Услуга</label>
+    <select id="nb_svc" onchange="const s=db.services.find(x=>x.id===this.value);if(s)document.getElementById('nb_price').value=s.price;">
+      ${activeServices.map(s => `<option value="${s.id}" ${a?.services[0]?.id===s.id?'selected':''}>${s.title} (${fmtRub(s.price)}, ${s.duration}м)</option>`).join('')}
+    </select>
+    <div class="row">
+      <div style="flex:1"><label>Дата</label><input type="date" id="nb_date" value="${a?.date || todayStr()}"></div>
+      <div style="flex:1"><label>Время</label><input type="time" id="nb_time" value="${a?.time || '12:00'}"></div>
+    </div>
+    <label>Итоговая цена (₽)</label><input type="number" id="nb_price" value="${a?.totalPrice || activeServices[0]?.price || 0}">
+    <label>Комментарий</label><input id="nb_comment" value="${a?.comment || ''}">
+    <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="saveAdminBooking('${editId || ''}')">Сохранить запись</button>
+  `);
+}
+const openEditBookingModal = (id) => openNewBookingModal(id);
+
+async function saveAdminBooking(editId) {
+  let clientId = document.getElementById('nb_client').value;
+  let clientObj = db.clients.find(c => c.id === clientId);
+  if (clientId === '__new__') {
+    const name = document.getElementById('nb_cname').value.trim();
+    if (!name) return toast('Укажите имя клиента');
+    clientObj = { id: uid(), telegramId: null, username: '', name, phone: document.getElementById('nb_cphone').value.trim(), notes: '', blocked: false };
+    db.clients.push(clientObj);
+    clientId = clientObj.id;
+  }
+  const svc = db.services.find(s => s.id === document.getElementById('nb_svc').value);
+  const payload = {
+    clientId,
+    clientName: clientObj?.name || 'Клиент',
+    clientPhone: clientObj?.phone || '',
+    telegramId: clientObj?.telegramId || '',
+    username: clientObj?.username || '',
+    date: document.getElementById('nb_date').value,
+    time: document.getElementById('nb_time').value,
+    duration: svc.duration,
+    buffer: db.settings.bufferMin,
+    totalPrice: Number(document.getElementById('nb_price').value) || svc.price,
+    comment: document.getElementById('nb_comment').value.trim(),
+    services: [{ id: svc.id, title: svc.title, price: svc.price, duration: svc.duration }]
+  };
+
+  let savedAppt;
+  if (editId) {
+    savedAppt = db.appointments.find(x => x.id === editId);
+    Object.assign(savedAppt, payload);
+  } else {
+    savedAppt = { id: uid(), status: 'confirmed', ...payload };
+    db.appointments.push(savedAppt);
+  }
+  saveDB();
+  closeModal();
+  toast('Запись сохранена');
+  render();
+  if (!editId) {
+    await apiPost({ action: 'create_appointment', appointment: savedAppt });
+  }
+}
+
+function openBlockSlotModal() {
+  openModal(`
+    <div class="row"><h3 style="margin:0">Заблокировать время</h3><button class="btn btn-soft btn-sm" onclick="closeModal()">✕</button></div>
+    <label>Дата</label><input type="date" id="bl_date" value="${todayStr()}">
+    <div class="row">
+      <div style="flex:1"><label>С</label><input type="time" id="bl_start" value="14:00"></div>
+      <div style="flex:1"><label>До</label><input type="time" id="bl_end" value="16:00"></div>
+    </div>
+    <label>Причина</label><input id="bl_reason" placeholder="Личные дела / Обед">
+    <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="saveBlockedSlot()">Заблокировать</button>
+  `);
+}
+
+async function saveBlockedSlot() {
+  const block = {
+    id: uid(),
+    date: document.getElementById('bl_date').value,
+    start: document.getElementById('bl_start').value,
+    end: document.getElementById('bl_end').value,
+    reason: document.getElementById('bl_reason').value.trim()
+  };
+  db.blockedSlots.push(block);
+  saveDB();
+  closeModal();
+  toast('Интервал заблокирован');
+  render();
+  await apiPost({ action: 'add_block', block });
+}
+
+/* ===================== CLIENT: BOOKING FLOW ===================== */
+function renderClientBooking() {
+  const client = getCurrentClient();
+  if (client.blocked) {
+    document.getElementById('app').innerHTML = `<div class="card" style="text-align:center;padding:24px">Онлайн-запись недоступна. Пожалуйста, свяжитесь с мастером напрямую.</div>`;
+    return;
+  }
+
+  const selectedSvcs = db.services.filter(s => state.selectedServiceIds.includes(s.id));
+  const totalDur = selectedSvcs.reduce((s, x) => s + x.duration, 0);
+  const totalPrice = selectedSvcs.reduce((s, x) => s + x.price, 0);
+
+  if (state.bookingStep === 1) {
+    const active = db.services.filter(s => s.active);
+    document.getElementById('app').innerHTML = `
+      <div class="muted" style="margin-bottom:8px">Шаг 1 из 3 • Выберите одну или несколько услуг</div>
+      ${active.map(s => {
+        const sel = state.selectedServiceIds.includes(s.id);
+        return `
+          <div class="svc-item ${sel ? 'selected' : ''}" onclick="toggleSelectService('${s.id}')">
+            <div>
+              <div style="font-weight:700">${s.title}</div>
+              <div class="muted">${s.duration} мин</div>
+            </div>
+            <div style="text-align:right">
+              <div class="price">${fmtRub(s.price)}</div>
+              <div class="muted">${sel ? '✓ Выбрано' : '+ Выбрать'}</div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+      ${selectedSvcs.length ? `
+        <div class="card row" style="position:sticky;bottom:74px;box-shadow:0 6px 20px rgba(0,0,0,0.12)">
+          <div><div class="muted">${selectedSvcs.length} усл. • ${totalDur} мин</div><div class="price">${fmtRub(totalPrice)}</div></div>
+          <button class="btn btn-primary" onclick="state.bookingStep=2;state.selectedSlot=null;haptic();render()">Выбрать время →</button>
+        </div>
+      ` : ''}
+    `;
+  } else if (state.bookingStep === 2) {
+    const slots = getFreeSlots(state.selectedDate, totalDur);
+    document.getElementById('app').innerHTML = `
+      <button class="btn btn-soft btn-sm" style="margin-bottom:10px" onclick="state.bookingStep=1;render()">← К услугам</button>
+      <div class="card">
+        <div class="muted">Шаг 2 из 3 • Время указано по ${db.settings.timezoneLabel}</div>
+        <label>Выберите дату</label>
+        <input type="date" min="${todayStr()}" max="${addDaysStr(db.settings.horizonDays)}" value="${state.selectedDate}" onchange="state.selectedDate=this.value;state.selectedSlot=null;render()">
+        <label style="margin-top:12px">Свободные слоты (${totalDur} мин)</label>
+        ${slots.length ? `
+          <div class="slots-grid">
+            ${slots.map(t => `<button class="slot-btn ${state.selectedSlot===t?'selected':''}" onclick="state.selectedSlot='${t}';haptic();render()">${t}</button>`).join('')}
+          </div>
+        ` : `<div class="comment-box">На эту дату свободных окон нет. Выберите другой день.</div>`}
+      </div>
+      ${state.selectedSlot ? `<button class="btn btn-primary btn-full" onclick="state.bookingStep=3;haptic();render()">Продолжить на ${state.selectedSlot} →</button>` : ''}
+    `;
+  } else {
+    document.getElementById('app').innerHTML = `
+      <button class="btn btn-soft btn-sm" style="margin-bottom:10px" onclick="state.bookingStep=2;render()">← К выбору времени</button>
+      <div class="card">
+        <div class="muted">Шаг 3 из 3 • Подтверждение</div>
+        <div style="font-weight:700;font-size:16px;margin:6px 0">${state.selectedDate} в ${state.selectedSlot} (${db.settings.timezoneLabel})</div>
+        <div class="muted">${selectedSvcs.map(s=>s.title).join(', ')} • <b>${fmtRub(totalPrice)}</b></div>
+        <label>Ваше имя</label>
+        <input id="cb_name" value="${client.name || state.bookingName}">
+        <label>Телефон</label>
+        <div class="row">
+          <input id="cb_phone" placeholder="+7 999 000-00-00" value="${client.phone || state.bookingPhone}">
+          <button class="btn btn-soft btn-sm" style="white-space:nowrap" onclick="requestTgPhone()">Из TG</button>
+        </div>
+        <label>Комментарий (необязательно)</label>
+        <textarea id="cb_comment" placeholder="Пожелания к визиту">${state.bookingComment}</textarea>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="submitClientBooking()">Записаться на ${state.selectedDate.slice(5)}, ${state.selectedSlot}</button>
+    `;
+  }
+}
+
+function toggleSelectService(id) {
+  haptic('light');
+  if (state.selectedServiceIds.includes(id)) state.selectedServiceIds = state.selectedServiceIds.filter(x => x !== id);
+  else state.selectedServiceIds.push(id);
+  render();
+}
+
+function requestTgPhone() {
+  if (tg?.requestContact) {
+    tg.requestContact((ok) => toast(ok ? 'Контакт отправлен боту' : 'Отменено'));
+  } else {
+    toast('Доступно внутри Telegram');
+  }
+}
+
+async function submitClientBooking() {
+  const name = document.getElementById('cb_name').value.trim();
+  const phone = document.getElementById('cb_phone').value.trim();
+  const comment = document.getElementById('cb_comment').value.trim();
+  if (!name || !phone) return toast('Укажите имя и телефон');
+
+  const client = getCurrentClient();
+  client.name = name;
+  client.phone = phone;
+
+  const svcs = db.services.filter(s => state.selectedServiceIds.includes(s.id));
+  const totalDur = svcs.reduce((s, x) => s + x.duration, 0);
+  const totalPrice = svcs.reduce((s, x) => s + x.price, 0);
+
+  const appt = {
+    id: uid(),
+    clientId: client.id,
+    clientName: name,
+    clientPhone: phone,
+    telegramId: client.telegramId || '',
+    username: client.username || '',
+    date: state.selectedDate,
+    time: state.selectedSlot,
+    duration: totalDur,
+    buffer: db.settings.bufferMin,
+    totalPrice,
+    status: db.settings.autoConfirm ? 'confirmed' : 'pending',
+    comment,
+    services: svcs.map(s => ({ id: s.id, title: s.title, price: s.price, duration: s.duration }))
+  };
+
+  db.appointments.push(appt);
+  saveDB();
+  haptic('medium');
+  toast('Вы успешно записаны!');
+  state.selectedServiceIds = [];
+  state.bookingStep = 1;
+  state.clientTab = 'my';
+  render();
+  await apiPost({ action: 'create_appointment', appointment: appt });
+}
+
+/* ===================== CLIENT: MY BOOKINGS ===================== */
+function renderClientMyBookings() {
+  const client = getCurrentClient();
+  const all = db.appointments.filter(a => a.clientId === client.id).sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
+  const list = state.myTab === 'upcoming'
+    ? all.filter(a => ['pending', 'confirmed'].includes(a.status))
+    : all.filter(a => !['pending', 'confirmed'].includes(a.status));
+
+  let html = `
+    <div class="segments">
+      <button class="seg-btn ${state.myTab==='upcoming'?'active':''}" onclick="state.myTab='upcoming';render()">Предстоящие</button>
+      <button class="seg-btn ${state.myTab==='history'?'active':''}" onclick="state.myTab='history';render()">История</button>
+    </div>
+  `;
+
+  if (!list.length) {
+    html += `<div class="card muted" style="text-align:center;padding:28px">Записей пока нет</div>`;
+  }
+
+  list.forEach(a => {
+    const visitDt = new Date(`${a.date}T${a.time}:00`);
+    const hoursLeft = (visitDt - new Date()) / 3600000;
+    const canCancel = hoursLeft >= db.settings.cancelLimitHours;
+
+    html += `
+      <div class="card">
+        <div class="row">
+          <div>
+            <div style="font-weight:700">${a.date} в ${a.time}</div>
+            <div class="muted">${a.services.map(s=>s.title).join(', ')}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="price">${fmtRub(a.totalPrice)}</div>
+            <span class="badge b-${a.status}">${STATUS_LABEL[a.status]}</span>
+          </div>
+        </div>
+        ${state.myTab === 'upcoming' ? `
+          <div class="row" style="margin-top:10px">
+            ${canCancel
+              ? `<button class="btn btn-danger btn-sm" style="flex:1" onclick="setApptStatus('${a.id}','cancelled')">Отменить запись</button>`
+              : `<a class="btn btn-soft btn-sm" style="flex:1;text-decoration:none" href="https://t.me/${db.settings.masterTelegram}" target="_blank">Написать мастеру (менее ${db.settings.cancelLimitHours}ч)</a>`
+            }
+          </div>
+        ` : ''}
+      </div>
+    `;
+  });
+
+  document.getElementById('app').innerHTML = html;
+}
+
+/* ===================== MODAL UTILS ===================== */
+function openModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalBackdrop').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('modalBackdrop').classList.remove('open');
+}
+
+render();
+syncFromSheets(false);
+</script>
 </body>
 </html>
