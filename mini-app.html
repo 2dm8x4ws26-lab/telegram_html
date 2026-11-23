@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Онлайн-запись и Мини-CRM</title>
+  <title>Онлайн-запись</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
@@ -50,6 +50,7 @@
       font-size: 13px; font-weight: 600; cursor: pointer;
       display: inline-flex; align-items: center; justify-content: center; gap: 5px;
       transition: opacity .15s, transform .1s;
+      text-decoration: none;
     }
     .btn:active { transform: scale(0.97); }
     .btn-primary { background: var(--accent); color: var(--accent-text); }
@@ -151,11 +152,6 @@
       padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
     }
 
-    /* Stats grid */
-    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
-    .stat-val { font-size: 20px; font-weight: 800; margin-top: 4px; }
-
     .toast {
       position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
       background: #111827; color: #fff; padding: 9px 14px; border-radius: 999px;
@@ -167,13 +163,13 @@
 
 <div class="header">
   <div>
-    <div class="header-title" id="headerTitle">Записи</div>
-    <div class="header-sub" id="headerSub">Управление мини-CRM</div>
+    <div class="header-title" id="headerTitle">Онлайн-запись</div>
+    <div class="header-sub" id="headerSub">Загрузка...</div>
   </div>
   <div class="header-actions">
-    <button class="btn btn-soft btn-sm" id="syncBtn" onclick="syncFromSheets(true)" title="Обновить из таблицы">↻</button>
-    <button class="btn btn-soft btn-sm" id="roleToggleBtn" onclick="toggleRole()">Как клиент</button>
-    <button class="btn btn-primary btn-sm" id="topActionBtn" onclick="openNewBookingModal()">+ Запись</button>
+    <button class="btn btn-soft btn-sm" id="syncBtn" onclick="syncFromSheets(true)" title="Обновить">↻</button>
+    <button class="btn btn-soft btn-sm" id="roleToggleBtn" style="display:none" onclick="toggleRole()">Как клиент</button>
+    <button class="btn btn-primary btn-sm" id="topActionBtn" style="display:none" onclick="openBlockSlotModal()">🔒 Окно</button>
   </div>
 </div>
 
@@ -185,19 +181,27 @@
 <div class="toast" id="toast"></div>
 
 <script>
-/* ===================== CONFIG (GOOGLE APPS SCRIPT) ===================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbzvR0WeDH7P4rBrCAEisKgNXpVf0QaZPa_kFNHcuj3rIENDYw73LdCSODjD39MuP-EU/exec'; // Вставь сюда URL веб-приложения Apps Script (.../exec)
-const OWNER_TELEGRAM_ID = null; // Например, 123456789 — если задан, админка видна только владельцу
+/* ===================== НАСТРОЙКИ ЗАПУСКА ===================== */
+const API_URL = 'https://script.google.com/macros/s/AKfycbzvR0WeDH7P4rBrCAEisKgNXpVf0QaZPa_kFNHcuj3rIENDYw73LdCSODjD39MuP-EU/exec'; // Вставь URL веб-приложения Google Apps Script (.../exec)
+const OWNER_TELEGRAM_ID = null; // Например, 123456789 — ID владельца для автоматического входа в админку
 
-/* ===================== TELEGRAM SDK ===================== */
 const tg = window.Telegram?.WebApp;
 if (tg) {
   tg.ready();
   tg.expand();
 }
+
+const urlParams = new URLSearchParams(window.location.search);
+const tgUser = tg?.initDataUnsafe?.user || null;
+const isOwner = Boolean(
+  (OWNER_TELEGRAM_ID && tgUser?.id && Number(tgUser.id) === Number(OWNER_TELEGRAM_ID)) ||
+  urlParams.get('admin') === '1'
+);
+
 function haptic(type = 'light') {
   try { tg?.HapticFeedback?.impactOccurred(type); } catch {}
 }
+
 function toast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -206,11 +210,10 @@ function toast(msg) {
   window._toastT = setTimeout(() => el.style.display = 'none', 2300);
 }
 
-/* ===================== HELPERS ===================== */
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const addDaysStr = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const fmtRub = (n) => Number(n || 0).toLocaleString('ru-RU') + ' ₽';
-const toMin = (hhmm) => { const [h, m] = String(hhmm).split(':').map(Number); return h * 60 + m; };
+const toMin = (hhmm) => { const [h, m] = String(hhmm || '00:00').split(':').map(Number); return h * 60 + m; };
 const fromMin = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -222,8 +225,7 @@ const STATUS_LABEL = {
   no_show: 'Не пришёл'
 };
 
-/* ===================== STORE (localStorage + Sheets sync) ===================== */
-const STORAGE_KEY = 'tma_crm_v1';
+const STORAGE_KEY = 'tma_booking_v2';
 const DEFAULT_DB = {
   settings: {
     timezoneLabel: 'МСК',
@@ -238,29 +240,43 @@ const DEFAULT_DB = {
     cancelLimitHours: 4,
     autoConfirm: true,
     masterTelegram: 'master_support',
-    address: 'Москва, ул. Примерная, д. 10'
+    address: 'Уточняется при записи'
   },
   services: [
-    { id: 's1', category: 'Основные', title: 'Маникюр с покрытием', price: 2400, duration: 90, active: true },
-    { id: 's2', category: 'Основные', title: 'Консультация / разбор', price: 3500, duration: 60, active: true },
-    { id: 's3', category: 'Основные', title: 'Индивидуальное занятие', price: 2000, duration: 60, active: true },
-    { id: 's4', category: 'Дополнительно', title: 'Снятие покрытия', price: 500, duration: 30, active: true }
+    { id: 's1', category: 'Основные', title: 'Базовая услуга', price: 2000, duration: 60, active: true },
+    { id: 's2', category: 'Основные', title: 'Расширенная услуга', price: 3500, duration: 90, active: true }
   ],
-  clients: [
-    { id: 'c1', telegramId: 1001, username: 'anna_smirnova', name: 'Анна Смирнова', phone: '+7 999 111-22-33', notes: 'Любит нюдовые оттенки, аллергии нет', blocked: false },
-    { id: 'c2', telegramId: 1002, username: 'maxim_orlov', name: 'Максим Орлов', phone: '+7 999 222-33-44', notes: 'Первичный разбор задач, 60 минут', blocked: false },
-    { id: 'c3', telegramId: null, username: '', name: 'Елена Козлова', phone: '+7 999 333-44-55', notes: 'Записалась по телефону', blocked: false }
-  ],
-  appointments: [
-    { id: 'a1', clientId: 'c1', clientName: 'Анна Смирнова', clientPhone: '+7 999 111-22-33', date: todayStr(), time: '10:30', duration: 90, buffer: 15, totalPrice: 2400, status: 'completed', comment: 'Нюдовый оттенок, снятие старого покрытия', services: [{ id: 's1', title: 'Маникюр с покрытием', price: 2400, duration: 90 }] },
-    { id: 'a2', clientId: 'c2', clientName: 'Максим Орлов', clientPhone: '+7 999 222-33-44', date: todayStr(), time: '14:00', duration: 60, buffer: 15, totalPrice: 3500, status: 'confirmed', comment: 'Первичный разбор задач, 60 минут', services: [{ id: 's2', title: 'Консультация / разбор', price: 3500, duration: 60 }] },
-    { id: 'a3', clientId: 'c3', clientName: 'Елена Козлова', clientPhone: '+7 999 333-44-55', date: todayStr(), time: '17:30', duration: 60, buffer: 15, totalPrice: 2000, status: 'confirmed', comment: 'Онлайн-созвон, отправить материалы заранее', services: [{ id: 's3', title: 'Индивидуальное занятие', price: 2000, duration: 60 }] }
-  ],
+  appointments: [],
   blockedSlots: []
 };
 
 let db = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || structuredClone(DEFAULT_DB);
 function saveDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
+
+const state = {
+  role: isOwner ? 'admin' : 'client',
+  clientTab: 'book',
+  scheduleFilter: 'today',
+  scheduleDate: todayStr(),
+  bookingStep: 1,
+  selectedServiceIds: [],
+  selectedDate: todayStr(),
+  selectedSlot: null,
+  bookingName: tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ') : '',
+  bookingPhone: '',
+  bookingComment: '',
+  myTab: 'upcoming'
+};
+
+function getClientKey() {
+  if (tgUser?.id) return String(tgUser.id);
+  let guestId = localStorage.getItem('tma_guest_id');
+  if (!guestId) {
+    guestId = 'guest_' + uid();
+    localStorage.setItem('tma_guest_id', guestId);
+  }
+  return guestId;
+}
 
 async function apiPost(payload) {
   if (!API_URL) return { ok: true, localOnly: true };
@@ -271,15 +287,15 @@ async function apiPost(payload) {
     });
     return await res.json();
   } catch (err) {
-    console.warn('API POST error:', err);
-    toast('Сохранено локально (нет связи с таблицей)');
+    toast('Нет связи с таблицей');
     return { ok: false, error: err.message };
   }
 }
 
 async function syncFromSheets(showNotice = false) {
   if (!API_URL) {
-    if (showNotice) toast('Локальный режим (API_URL не задан)');
+    if (showNotice) toast('Локальный режим (укажите API_URL)');
+    render();
     return;
   }
   try {
@@ -313,77 +329,17 @@ async function syncFromSheets(showNotice = false) {
       };
     }
     if (Array.isArray(data.appointments)) {
-      db.appointments = data.appointments.map(a => {
-        let client = db.clients.find(c =>
-          (a.telegramId && String(c.telegramId) === String(a.telegramId)) ||
-          (a.clientPhone && c.phone === a.clientPhone) ||
-          (a.clientName && c.name === a.clientName)
-        );
-        if (!client && a.clientName) {
-          client = {
-            id: 'cl_' + uid(),
-            telegramId: a.telegramId || null,
-            username: a.username || '',
-            name: a.clientName,
-            phone: a.clientPhone || '',
-            notes: '',
-            blocked: false
-          };
-          db.clients.push(client);
-        }
-        return { ...a, clientId: client?.id || a.clientId };
-      });
+      db.appointments = data.appointments;
     }
-
     saveDB();
     render();
-    if (showNotice) toast('Данные обновлены из Google Таблицы');
+    if (showNotice) toast('Расписание обновлено');
   } catch (err) {
-    console.warn('Sync error:', err);
-    if (showNotice) toast('Не удалось обновить из таблицы');
+    if (showNotice) toast('Ошибка обновления');
   }
 }
 
-/* ===================== APP STATE ===================== */
-const tgUserId = tg?.initDataUnsafe?.user?.id || null;
-const canUseAdmin = !OWNER_TELEGRAM_ID || !tgUserId || Number(tgUserId) === Number(OWNER_TELEGRAM_ID);
-
-const state = {
-  role: canUseAdmin ? 'admin' : 'client',
-  adminTab: 'schedule',
-  clientTab: 'book',
-  scheduleFilter: 'today',
-  scheduleDate: todayStr(),
-  clientSearch: '',
-  financePeriod: 'month',
-  bookingStep: 1,
-  selectedServiceIds: [],
-  selectedDate: todayStr(),
-  selectedSlot: null,
-  bookingName: tg?.initDataUnsafe?.user?.first_name || 'Гость',
-  bookingPhone: '',
-  bookingComment: '',
-  myTab: 'upcoming'
-};
-
-function getCurrentClient() {
-  const tgUser = tg?.initDataUnsafe?.user;
-  const tgId = tgUser?.id || 1001;
-  let client = db.clients.find(c => String(c.telegramId) === String(tgId));
-  if (!client) {
-    client = {
-      id: uid(), telegramId: tgId, username: tgUser?.username || '',
-      name: [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || 'Клиент Telegram',
-      phone: '', notes: '', blocked: false
-    };
-    db.clients.push(client);
-    saveDB();
-  }
-  return client;
-}
-
-/* ===================== SLOT ENGINE ===================== */
-function getFreeSlots(dateStr, durationMin, excludeApptId = null) {
+function getFreeSlots(dateStr, durationMin) {
   const s = db.settings;
   const start = toMin(s.workStart);
   const end = toMin(s.workEnd);
@@ -393,8 +349,8 @@ function getFreeSlots(dateStr, durationMin, excludeApptId = null) {
   const buf = Number(s.bufferMin) || 0;
 
   const busy = db.appointments
-    .filter(a => a.date === dateStr && a.id !== excludeApptId && ['pending', 'confirmed'].includes(a.status))
-    .map(a => ({ start: toMin(a.time), end: toMin(a.time) + a.duration + (a.buffer || 0) }));
+    .filter(a => a.date === dateStr && ['pending', 'confirmed'].includes(a.status))
+    .map(a => ({ start: toMin(a.time), end: toMin(a.time) + Number(a.duration || 60) + Number(a.buffer || 0) }));
 
   db.blockedSlots
     .filter(b => b.date === dateStr)
@@ -416,9 +372,8 @@ function getFreeSlots(dateStr, durationMin, excludeApptId = null) {
   return slots;
 }
 
-/* ===================== RENDER ROUTER ===================== */
 function toggleRole() {
-  if (!canUseAdmin) return toast('Режим администратора недоступен');
+  if (!isOwner) return;
   haptic('medium');
   state.role = state.role === 'admin' ? 'client' : 'admin';
   state.bookingStep = 1;
@@ -426,47 +381,27 @@ function toggleRole() {
 }
 
 function render() {
-  const isAdmin = state.role === 'admin' && canUseAdmin;
+  const showAdmin = isOwner && state.role === 'admin';
   const roleBtn = document.getElementById('roleToggleBtn');
-  roleBtn.style.display = canUseAdmin ? 'inline-flex' : 'none';
-  roleBtn.textContent = isAdmin ? 'Как клиент' : 'В админку';
-  document.getElementById('topActionBtn').style.display = isAdmin ? 'inline-flex' : 'none';
+  const blockBtn = document.getElementById('topActionBtn');
 
-  if (isAdmin) {
-    const titles = {
-      schedule: ['Записи', 'Управление мини-CRM'],
-      clients: ['Клиенты', `Всего в базе: ${db.clients.length}`],
-      services: ['Услуги и график', 'Настройки записи'],
-      finance: ['Финансы', 'Аналитика и экспорт']
-    };
-    document.getElementById('headerTitle').textContent = titles[state.adminTab][0];
-    document.getElementById('headerSub').textContent = titles[state.adminTab][1];
-    renderAdminNav();
-    if (state.adminTab === 'schedule') renderAdminSchedule();
-    if (state.adminTab === 'clients') renderAdminClients();
-    if (state.adminTab === 'services') renderAdminServices();
-    if (state.adminTab === 'finance') renderAdminFinance();
+  roleBtn.style.display = isOwner ? 'inline-flex' : 'none';
+  roleBtn.textContent = showAdmin ? 'Как клиент' : 'В админку';
+  blockBtn.style.display = showAdmin ? 'inline-flex' : 'none';
+
+  if (showAdmin) {
+    document.getElementById('headerTitle').textContent = 'Записи мастера';
+    document.getElementById('headerSub').textContent = `${db.settings.timezoneLabel} • управление в таблице`;
+    document.getElementById('bottomNav').style.display = 'none';
+    renderAdminView();
   } else {
     document.getElementById('headerTitle').textContent = state.clientTab === 'book' ? 'Онлайн-запись' : 'Мои записи';
     document.getElementById('headerSub').textContent = db.settings.address;
+    document.getElementById('bottomNav').style.display = 'flex';
     renderClientNav();
     if (state.clientTab === 'book') renderClientBooking();
     else renderClientMyBookings();
   }
-}
-
-function renderAdminNav() {
-  const tabs = [
-    ['schedule', '📅', 'Записи'],
-    ['clients', '👥', 'Клиенты'],
-    ['services', '⚙️', 'Услуги'],
-    ['finance', '📊', 'Финансы']
-  ];
-  document.getElementById('bottomNav').innerHTML = tabs.map(([id, icon, label]) => `
-    <button class="nav-item ${state.adminTab === id ? 'active' : ''}" onclick="state.adminTab='${id}';haptic();render()">
-      <span class="nav-icon">${icon}</span><span>${label}</span>
-    </button>
-  `).join('');
 }
 
 function renderClientNav() {
@@ -481,15 +416,17 @@ function renderClientNav() {
   `).join('');
 }
 
-/* ===================== ADMIN: SCHEDULE ===================== */
-function renderAdminSchedule() {
+/* ===================== ЛЁГКАЯ АДМИНКА ДЛЯ ВЛАДЕЛЬЦА ===================== */
+function renderAdminView() {
   let list = [...db.appointments];
   if (state.scheduleFilter === 'today') list = list.filter(a => a.date === todayStr());
   if (state.scheduleFilter === 'tomorrow') list = list.filter(a => a.date === addDaysStr(1));
   if (state.scheduleFilter === 'date') list = list.filter(a => a.date === state.scheduleDate);
   list.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
-  const activeSum = list.filter(a => a.status !== 'cancelled' && a.status !== 'no_show').reduce((s, a) => s + Number(a.totalPrice), 0);
+  const sum = list
+    .filter(a => !['cancelled', 'no_show'].includes(a.status))
+    .reduce((acc, a) => acc + Number(a.totalPrice || 0), 0);
 
   let html = `
     <div class="segments">
@@ -507,54 +444,44 @@ function renderAdminSchedule() {
   html += `
     <div class="card row">
       <div>
-        <div class="muted">${state.scheduleFilter==='today'?'СЕГОДНЯ':state.scheduleFilter==='tomorrow'?'ЗАВТРА':'ВЫБРАНО'}</div>
-        <div style="font-weight:700;font-size:16px">${list.length} записей</div>
+        <div class="muted">ЗАПИСЕЙ</div>
+        <div style="font-weight:700;font-size:16px">${list.length}</div>
       </div>
       <div style="text-align:right">
         <div class="muted">Сумма</div>
-        <div style="font-weight:800;font-size:16px;color:var(--accent)">${fmtRub(activeSum)}</div>
+        <div style="font-weight:800;font-size:16px;color:var(--accent)">${fmtRub(sum)}</div>
       </div>
-    </div>
-    <div class="row" style="margin-bottom:10px">
-      <button class="btn btn-soft btn-sm" onclick="openBlockSlotModal()">🔒 Заблокировать время</button>
-      ${db.blockedSlots.length ? `<span class="muted">Блокировок: ${db.blockedSlots.length}</span>` : ''}
     </div>
   `;
 
   if (!list.length) {
-    html += `<div class="card muted" style="text-align:center;padding:28px">На выбранный период записей нет</div>`;
+    html += `<div class="card muted" style="text-align:center;padding:28px">Записей на выбранный период нет</div>`;
   }
 
   list.forEach(a => {
-    const client = db.clients.find(c => c.id === a.clientId) || { name: a.clientName || 'Клиент', phone: a.clientPhone || '' };
-    const svcNames = a.services.map(s => s.title).join(', ');
+    const svcNames = (a.services || []).map(s => s.title).join(', ') || 'Услуга';
     html += `
       <div class="card">
         <div class="row" style="align-items:flex-start">
-          <div style="display:flex;gap:10px;align-items:flex-start">
-            <div style="background:rgba(128,128,128,0.1);padding:6px 8px;border-radius:8px;font-weight:700;font-size:13px;text-align:center">
-              ${a.time}<div class="muted" style="font-size:10px">${a.date.slice(5)}</div>
-            </div>
-            <div>
-              <div style="font-weight:700;font-size:15px">${client.name}</div>
-              <div class="muted">${svcNames} (${a.duration} мин)</div>
-              <div class="row-wrap" style="margin-top:4px">
-                ${client.username ? `<a href="https://t.me/${client.username}" target="_blank" class="muted" style="color:var(--accent);text-decoration:none">@${client.username}</a>` : ''}
-                ${client.phone ? `<a href="tel:${client.phone}" class="muted" style="text-decoration:none">${client.phone}</a>` : ''}
-              </div>
+          <div>
+            <div style="font-weight:700;font-size:15px">${a.date} • ${a.time}</div>
+            <div style="font-weight:600;margin-top:2px">${a.clientName || 'Клиент'}</div>
+            <div class="muted">${svcNames} (${a.duration || 60} мин)</div>
+            <div class="row-wrap" style="margin-top:4px">
+              ${a.username ? `<a class="muted" style="color:var(--accent)" href="https://t.me/${a.username}" target="_blank">@${a.username}</a>` : ''}
+              ${a.clientPhone ? `<a class="muted" href="tel:${a.clientPhone}">${a.clientPhone}</a>` : ''}
             </div>
           </div>
           <div style="text-align:right">
             <div class="price">${fmtRub(a.totalPrice)}</div>
-            <span class="badge b-${a.status}">${STATUS_LABEL[a.status]}</span>
+            <span class="badge b-${a.status}">${STATUS_LABEL[a.status] || a.status}</span>
           </div>
         </div>
         ${a.comment ? `<div class="comment-box">${a.comment}</div>` : ''}
         <div class="row-wrap" style="margin-top:10px">
-          ${a.status !== 'completed' ? `<button class="btn btn-success btn-sm" style="flex:1" onclick="setApptStatus('${a.id}','completed')">Выполнено ✓</button>` : `<button class="btn btn-soft btn-sm" style="flex:1" onclick="setApptStatus('${a.id}','confirmed')">Вернуть в план</button>`}
-          ${a.status !== 'no_show' ? `<button class="btn btn-warn btn-sm" onclick="setApptStatus('${a.id}','no_show')">Не пришёл ✗</button>` : ''}
-          <button class="btn btn-soft btn-sm" onclick="openEditBookingModal('${a.id}')">Изменить</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteAppt('${a.id}')">🗑</button>
+          ${a.status !== 'completed' ? `<button class="btn btn-success btn-sm" style="flex:1" onclick="changeStatus('${a.id}','completed')">Выполнено</button>` : ''}
+          ${a.status !== 'no_show' ? `<button class="btn btn-warn btn-sm" onclick="changeStatus('${a.id}','no_show')">Не пришёл</button>` : ''}
+          ${a.status !== 'cancelled' ? `<button class="btn btn-danger btn-sm" onclick="changeStatus('${a.id}','cancelled')">Отменить</button>` : ''}
         </div>
       </div>
     `;
@@ -563,358 +490,15 @@ function renderAdminSchedule() {
   document.getElementById('app').innerHTML = html;
 }
 
-async function setApptStatus(id, status) {
-  const a = db.appointments.find(x => x.id === id);
-  if (!a) return;
-  a.status = status;
+async function changeStatus(id, status) {
+  const appt = db.appointments.find(x => String(x.id) === String(id));
+  if (!appt) return;
+  appt.status = status;
   saveDB();
   haptic('medium');
-  toast(`Статус обновлён: ${STATUS_LABEL[status]}`);
+  toast(`Статус: ${STATUS_LABEL[status]}`);
   render();
   await apiPost({ action: 'update_status', id, status });
-}
-
-function deleteAppt(id) {
-  if (!confirm('Удалить запись?')) return;
-  db.appointments = db.appointments.filter(x => x.id !== id);
-  saveDB();
-  haptic('medium');
-  render();
-}
-
-/* ===================== ADMIN: CLIENTS ===================== */
-function renderAdminClients() {
-  const q = state.clientSearch.toLowerCase();
-  const clients = db.clients.filter(c =>
-    c.name.toLowerCase().includes(q) ||
-    (c.phone || '').toLowerCase().includes(q) ||
-    (c.username || '').toLowerCase().includes(q)
-  );
-
-  let html = `
-    <div class="card">
-      <input type="text" placeholder="Поиск по имени, телефону или @username..." value="${state.clientSearch}" oninput="state.clientSearch=this.value;renderAdminClientsList()">
-    </div>
-    <div id="clientsList"></div>
-  `;
-  document.getElementById('app').innerHTML = html;
-  renderAdminClientsList();
-}
-
-function renderAdminClientsList() {
-  const q = state.clientSearch.toLowerCase();
-  const clients = db.clients.filter(c =>
-    c.name.toLowerCase().includes(q) ||
-    (c.phone || '').toLowerCase().includes(q) ||
-    (c.username || '').toLowerCase().includes(q)
-  );
-  const el = document.getElementById('clientsList');
-  if (!el) return;
-  el.innerHTML = clients.map(c => {
-    const appts = db.appointments.filter(a => a.clientId === c.id);
-    const completed = appts.filter(a => a.status === 'completed');
-    const ltv = completed.reduce((s, a) => s + Number(a.totalPrice), 0);
-    const noShows = appts.filter(a => a.status === 'no_show').length;
-    return `
-      <div class="card" onclick="openClientModal('${c.id}')" style="cursor:pointer">
-        <div class="row">
-          <div>
-            <div style="font-weight:700">${c.name} ${c.blocked ? '<span class="badge b-cancelled">ЧС</span>' : ''}</div>
-            <div class="muted">${c.phone || 'Нет телефона'} ${c.username ? '• @'+c.username : ''}</div>
-          </div>
-          <div style="text-align:right">
-            <div class="price">${fmtRub(ltv)}</div>
-            <div class="muted">Визитов: ${completed.length} ${noShows ? `• Неявок: ${noShows}` : ''}</div>
-          </div>
-        </div>
-        ${c.notes ? `<div class="comment-box" style="margin-bottom:0">${c.notes}</div>` : ''}
-      </div>
-    `;
-  }).join('') || `<div class="card muted" style="text-align:center">Клиенты не найдены</div>`;
-}
-
-function openClientModal(clientId) {
-  const c = db.clients.find(x => x.id === clientId);
-  if (!c) return;
-  const appts = db.appointments.filter(a => a.clientId === c.id).sort((a,b) => (b.date+b.time).localeCompare(a.date+a.time));
-  openModal(`
-    <div class="row" style="margin-bottom:10px">
-      <h3 style="margin:0">${c.name}</h3>
-      <button class="btn btn-soft btn-sm" onclick="closeModal()">✕</button>
-    </div>
-    <div class="row-wrap" style="margin-bottom:10px">
-      ${c.username ? `<a class="btn btn-primary btn-sm" href="https://t.me/${c.username}" target="_blank" style="text-decoration:none">Telegram</a>` : ''}
-      ${c.phone ? `<a class="btn btn-soft btn-sm" href="tel:${c.phone}" style="text-decoration:none">Позвонить</a>` : ''}
-      <button class="btn ${c.blocked?'btn-success':'btn-danger'} btn-sm" onclick="toggleBlockClient('${c.id}')">${c.blocked ? 'Убрать из ЧС' : 'В чёрный список'}</button>
-    </div>
-    <label>Личные заметки мастера (клиент не видит)</label>
-    <textarea id="clientNotesInput">${c.notes || ''}</textarea>
-    <button class="btn btn-primary btn-full" style="margin-top:8px" onclick="saveClientNotes('${c.id}')">Сохранить заметку</button>
-    <label style="margin-top:14px">История записей (${appts.length})</label>
-    ${appts.map(a => `
-      <div class="comment-box row">
-        <div><b>${a.date} ${a.time}</b> — ${a.services.map(s=>s.title).join(', ')}</div>
-        <span class="badge b-${a.status}">${STATUS_LABEL[a.status]}</span>
-      </div>
-    `).join('') || '<div class="muted">Записей пока нет</div>'}
-  `);
-}
-
-function saveClientNotes(id) {
-  const c = db.clients.find(x => x.id === id);
-  c.notes = document.getElementById('clientNotesInput').value.trim();
-  saveDB();
-  toast('Заметка сохранена');
-  closeModal();
-  render();
-}
-
-function toggleBlockClient(id) {
-  const c = db.clients.find(x => x.id === id);
-  c.blocked = !c.blocked;
-  saveDB();
-  toast(c.blocked ? 'Клиент добавлен в ЧС' : 'Клиент разблокирован');
-  openClientModal(id);
-  renderAdminClientsList();
-}
-
-/* ===================== ADMIN: SERVICES & SETTINGS ===================== */
-function renderAdminServices() {
-  const s = db.settings;
-  let html = `
-    <div class="row" style="margin-bottom:8px">
-      <div style="font-weight:700">Услуги</div>
-      <button class="btn btn-primary btn-sm" onclick="openServiceModal()">+ Добавить услугу</button>
-    </div>
-    ${db.services.map(svc => `
-      <div class="card row" style="opacity:${svc.active ? 1 : 0.55}">
-        <div>
-          <div style="font-weight:700">${svc.title} ${!svc.active ? '<span class="badge b-cancelled">Архив</span>' : ''}</div>
-          <div class="muted">${svc.category} • ${svc.duration} мин</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div class="price">${fmtRub(svc.price)}</div>
-          <button class="btn btn-soft btn-sm" onclick="openServiceModal('${svc.id}')">✎</button>
-        </div>
-      </div>
-    `).join('')}
-
-    <div class="card" style="margin-top:14px">
-      <div style="font-weight:700;margin-bottom:6px">График и правила записи</div>
-      <div class="row">
-        <div style="flex:1"><label>Начало дня</label><input type="time" id="st_start" value="${s.workStart}"></div>
-        <div style="flex:1"><label>Конец дня</label><input type="time" id="st_end" value="${s.workEnd}"></div>
-      </div>
-      <div class="row">
-        <div style="flex:1"><label>Перерыв с</label><input type="time" id="st_bstart" value="${s.breakStart}"></div>
-        <div style="flex:1"><label>Перерыв до</label><input type="time" id="st_bend" value="${s.breakEnd}"></div>
-      </div>
-      <div class="row">
-        <div style="flex:1"><label>Шаг сетки (мин)</label><input type="number" id="st_step" value="${s.slotStep}"></div>
-        <div style="flex:1"><label>Буфер (мин)</label><input type="number" id="st_buf" value="${s.bufferMin}"></div>
-      </div>
-      <div class="row">
-        <div style="flex:1"><label>Запрет отмены за (ч)</label><input type="number" id="st_cancel" value="${s.cancelLimitHours}"></div>
-        <div style="flex:1"><label>Часовой пояс</label><input type="text" id="st_tz" value="${s.timezoneLabel}"></div>
-      </div>
-      <label>Адрес</label>
-      <input type="text" id="st_addr" value="${s.address}">
-      <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="saveSettings()">Сохранить настройки</button>
-    </div>
-  `;
-  document.getElementById('app').innerHTML = html;
-}
-
-async function saveSettings() {
-  db.settings.workStart = document.getElementById('st_start').value;
-  db.settings.workEnd = document.getElementById('st_end').value;
-  db.settings.breakStart = document.getElementById('st_bstart').value;
-  db.settings.breakEnd = document.getElementById('st_bend').value;
-  db.settings.slotStep = Number(document.getElementById('st_step').value) || 30;
-  db.settings.bufferMin = Number(document.getElementById('st_buf').value) || 0;
-  db.settings.cancelLimitHours = Number(document.getElementById('st_cancel').value) || 0;
-  db.settings.timezoneLabel = document.getElementById('st_tz').value.trim() || 'МСК';
-  db.settings.address = document.getElementById('st_addr').value.trim();
-  saveDB();
-  haptic('medium');
-  toast('Настройки сохранены');
-  await apiPost({ action: 'save_settings', settings: db.settings });
-}
-
-function openServiceModal(id = null) {
-  const svc = id ? db.services.find(x => x.id === id) : { title: '', category: 'Основные', price: 2000, duration: 60, active: true };
-  openModal(`
-    <div class="row"><h3 style="margin:0">${id ? 'Редактировать услугу' : 'Новая услуга'}</h3><button class="btn btn-soft btn-sm" onclick="closeModal()">✕</button></div>
-    <label>Название</label><input id="sv_title" value="${svc.title}">
-    <label>Категория</label><input id="sv_cat" value="${svc.category}">
-    <div class="row">
-      <div style="flex:1"><label>Цена (₽)</label><input type="number" id="sv_price" value="${svc.price}"></div>
-      <div style="flex:1"><label>Длительность (мин)</label><input type="number" id="sv_dur" value="${svc.duration}"></div>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <button class="btn btn-primary" style="flex:1" onclick="saveService('${id || ''}')">Сохранить</button>
-      ${id ? `<button class="btn btn-soft" onclick="toggleArchiveService('${id}')">${svc.active ? 'В архив' : 'Восстановить'}</button>` : ''}
-    </div>
-  `);
-}
-
-async function saveService(id) {
-  const data = {
-    title: document.getElementById('sv_title').value.trim(),
-    category: document.getElementById('sv_cat').value.trim() || 'Основные',
-    price: Number(document.getElementById('sv_price').value) || 0,
-    duration: Number(document.getElementById('sv_dur').value) || 30
-  };
-  if (!data.title) return toast('Введите название услуги');
-  if (id) Object.assign(db.services.find(x => x.id === id), data);
-  else db.services.push({ id: uid(), ...data, active: true });
-  saveDB();
-  closeModal();
-  render();
-  await apiPost({ action: 'save_services', services: db.services });
-}
-
-async function toggleArchiveService(id) {
-  const svc = db.services.find(x => x.id === id);
-  svc.active = !svc.active;
-  saveDB();
-  closeModal();
-  render();
-  await apiPost({ action: 'save_services', services: db.services });
-}
-
-/* ===================== ADMIN: FINANCE ===================== */
-function renderAdminFinance() {
-  const now = todayStr();
-  const list = db.appointments.filter(a => {
-    if (state.financePeriod === 'day') return a.date === now;
-    if (state.financePeriod === 'week') return a.date >= addDaysStr(-7);
-    if (state.financePeriod === 'month') return a.date.slice(0, 7) === now.slice(0, 7);
-    return true;
-  });
-
-  const completed = list.filter(a => a.status === 'completed');
-  const planned = list.filter(a => ['pending', 'confirmed'].includes(a.status));
-  const factSum = completed.reduce((s, a) => s + Number(a.totalPrice), 0);
-  const planSum = planned.reduce((s, a) => s + Number(a.totalPrice), 0);
-  const avg = completed.length ? Math.round(factSum / completed.length) : 0;
-
-  const byService = {};
-  completed.forEach(a => a.services.forEach(s => {
-    byService[s.title] = (byService[s.title] || 0) + Number(s.price);
-  }));
-  const topServices = Object.entries(byService).sort((a, b) => b[1] - a[1]);
-
-  document.getElementById('app').innerHTML = `
-    <div class="segments">
-      <button class="seg-btn ${state.financePeriod==='day'?'active':''}" onclick="state.financePeriod='day';render()">День</button>
-      <button class="seg-btn ${state.financePeriod==='week'?'active':''}" onclick="state.financePeriod='week';render()">Неделя</button>
-      <button class="seg-btn ${state.financePeriod==='month'?'active':''}" onclick="state.financePeriod='month';render()">Месяц</button>
-      <button class="seg-btn ${state.financePeriod==='all'?'active':''}" onclick="state.financePeriod='all';render()">Всё</button>
-    </div>
-
-    <div class="stats-grid">
-      <div class="stat-card"><div class="muted">Заработано (факт)</div><div class="stat-val" style="color:var(--success)">${fmtRub(factSum)}</div></div>
-      <div class="stat-card"><div class="muted">В плане</div><div class="stat-val" style="color:var(--accent)">${fmtRub(planSum)}</div></div>
-      <div class="stat-card"><div class="muted">Средний чек</div><div class="stat-val">${fmtRub(avg)}</div></div>
-      <div class="stat-card"><div class="muted">Визиты / Неявки</div><div class="stat-val">${completed.length} / ${list.filter(a=>a.status==='no_show').length}</div></div>
-    </div>
-
-    <div class="card">
-      <div style="font-weight:700;margin-bottom:8px">Топ услуг по выручке</div>
-      ${topServices.map(([name, sum]) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--border)"><span>${name}</span><b>${fmtRub(sum)}</b></div>`).join('') || '<div class="muted">Нет завершённых визитов за период</div>'}
-    </div>
-
-    <button class="btn btn-primary btn-full" onclick="exportCSV()">📥 Экспорт в CSV (Excel)</button>
-  `;
-}
-
-function exportCSV() {
-  const rows = [['Дата', 'Время', 'Клиент', 'Телефон', 'Услуги', 'Сумма', 'Статус', 'Комментарий']];
-  db.appointments.forEach(a => {
-    const c = db.clients.find(x => x.id === a.clientId) || {};
-    rows.push([a.date, a.time, c.name || a.clientName || '', c.phone || a.clientPhone || '', a.services.map(s=>s.title).join('; '), a.totalPrice, STATUS_LABEL[a.status], (a.comment || '').replace(/[\r\n]+/g, ' ')]);
-  });
-  const csv = '\uFEFF' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `crm_export_${todayStr()}.csv`;
-  link.click();
-  toast('CSV-файл скачан');
-}
-
-/* ===================== ADMIN: MODALS (NEW / EDIT / BLOCK) ===================== */
-function openNewBookingModal(editId = null) {
-  const a = editId ? db.appointments.find(x => x.id === editId) : null;
-  const activeServices = db.services.filter(s => s.active);
-  openModal(`
-    <div class="row"><h3 style="margin:0">${a ? 'Изменить запись' : 'Новая запись (вручную)'}</h3><button class="btn btn-soft btn-sm" onclick="closeModal()">✕</button></div>
-    <label>Клиент из базы</label>
-    <select id="nb_client" onchange="document.getElementById('nb_new_client_wrap').style.display=this.value==='__new__'?'block':'none'">
-      <option value="__new__">+ Новый клиент (без Telegram)</option>
-      ${db.clients.map(c => `<option value="${c.id}" ${a?.clientId===c.id?'selected':''}>${c.name} (${c.phone || 'без тел.'})</option>`).join('')}
-    </select>
-    <div id="nb_new_client_wrap" style="display:${a ? 'none' : 'block'}">
-      <label>Имя нового клиента</label><input id="nb_cname" placeholder="Иван Иванов">
-      <label>Телефон</label><input id="nb_cphone" placeholder="+7 999 000-00-00">
-    </div>
-    <label>Услуга</label>
-    <select id="nb_svc" onchange="const s=db.services.find(x=>x.id===this.value);if(s)document.getElementById('nb_price').value=s.price;">
-      ${activeServices.map(s => `<option value="${s.id}" ${a?.services[0]?.id===s.id?'selected':''}>${s.title} (${fmtRub(s.price)}, ${s.duration}м)</option>`).join('')}
-    </select>
-    <div class="row">
-      <div style="flex:1"><label>Дата</label><input type="date" id="nb_date" value="${a?.date || todayStr()}"></div>
-      <div style="flex:1"><label>Время</label><input type="time" id="nb_time" value="${a?.time || '12:00'}"></div>
-    </div>
-    <label>Итоговая цена (₽)</label><input type="number" id="nb_price" value="${a?.totalPrice || activeServices[0]?.price || 0}">
-    <label>Комментарий</label><input id="nb_comment" value="${a?.comment || ''}">
-    <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="saveAdminBooking('${editId || ''}')">Сохранить запись</button>
-  `);
-}
-const openEditBookingModal = (id) => openNewBookingModal(id);
-
-async function saveAdminBooking(editId) {
-  let clientId = document.getElementById('nb_client').value;
-  let clientObj = db.clients.find(c => c.id === clientId);
-  if (clientId === '__new__') {
-    const name = document.getElementById('nb_cname').value.trim();
-    if (!name) return toast('Укажите имя клиента');
-    clientObj = { id: uid(), telegramId: null, username: '', name, phone: document.getElementById('nb_cphone').value.trim(), notes: '', blocked: false };
-    db.clients.push(clientObj);
-    clientId = clientObj.id;
-  }
-  const svc = db.services.find(s => s.id === document.getElementById('nb_svc').value);
-  const payload = {
-    clientId,
-    clientName: clientObj?.name || 'Клиент',
-    clientPhone: clientObj?.phone || '',
-    telegramId: clientObj?.telegramId || '',
-    username: clientObj?.username || '',
-    date: document.getElementById('nb_date').value,
-    time: document.getElementById('nb_time').value,
-    duration: svc.duration,
-    buffer: db.settings.bufferMin,
-    totalPrice: Number(document.getElementById('nb_price').value) || svc.price,
-    comment: document.getElementById('nb_comment').value.trim(),
-    services: [{ id: svc.id, title: svc.title, price: svc.price, duration: svc.duration }]
-  };
-
-  let savedAppt;
-  if (editId) {
-    savedAppt = db.appointments.find(x => x.id === editId);
-    Object.assign(savedAppt, payload);
-  } else {
-    savedAppt = { id: uid(), status: 'confirmed', ...payload };
-    db.appointments.push(savedAppt);
-  }
-  saveDB();
-  closeModal();
-  toast('Запись сохранена');
-  render();
-  if (!editId) {
-    await apiPost({ action: 'create_appointment', appointment: savedAppt });
-  }
 }
 
 function openBlockSlotModal() {
@@ -925,7 +509,7 @@ function openBlockSlotModal() {
       <div style="flex:1"><label>С</label><input type="time" id="bl_start" value="14:00"></div>
       <div style="flex:1"><label>До</label><input type="time" id="bl_end" value="16:00"></div>
     </div>
-    <label>Причина</label><input id="bl_reason" placeholder="Личные дела / Обед">
+    <label>Причина</label><input id="bl_reason" placeholder="Перерыв / личные дела">
     <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="saveBlockedSlot()">Заблокировать</button>
   `);
 }
@@ -941,27 +525,21 @@ async function saveBlockedSlot() {
   db.blockedSlots.push(block);
   saveDB();
   closeModal();
-  toast('Интервал заблокирован');
+  toast('Время заблокировано');
   render();
   await apiPost({ action: 'add_block', block });
 }
 
-/* ===================== CLIENT: BOOKING FLOW ===================== */
+/* ===================== КЛИЕНТСКИЙ СЦЕНАРИЙ ЗАПИСИ ===================== */
 function renderClientBooking() {
-  const client = getCurrentClient();
-  if (client.blocked) {
-    document.getElementById('app').innerHTML = `<div class="card" style="text-align:center;padding:24px">Онлайн-запись недоступна. Пожалуйста, свяжитесь с мастером напрямую.</div>`;
-    return;
-  }
-
-  const selectedSvcs = db.services.filter(s => state.selectedServiceIds.includes(s.id));
-  const totalDur = selectedSvcs.reduce((s, x) => s + x.duration, 0);
-  const totalPrice = selectedSvcs.reduce((s, x) => s + x.price, 0);
+  const selectedSvcs = db.services.filter(s => s.active && state.selectedServiceIds.includes(s.id));
+  const totalDur = selectedSvcs.reduce((s, x) => s + Number(x.duration || 60), 0);
+  const totalPrice = selectedSvcs.reduce((s, x) => s + Number(x.price || 0), 0);
 
   if (state.bookingStep === 1) {
     const active = db.services.filter(s => s.active);
     document.getElementById('app').innerHTML = `
-      <div class="muted" style="margin-bottom:8px">Шаг 1 из 3 • Выберите одну или несколько услуг</div>
+      <div class="muted" style="margin-bottom:8px">Шаг 1 из 3 • Выберите услугу</div>
       ${active.map(s => {
         const sel = state.selectedServiceIds.includes(s.id);
         return `
@@ -990,14 +568,14 @@ function renderClientBooking() {
       <button class="btn btn-soft btn-sm" style="margin-bottom:10px" onclick="state.bookingStep=1;render()">← К услугам</button>
       <div class="card">
         <div class="muted">Шаг 2 из 3 • Время указано по ${db.settings.timezoneLabel}</div>
-        <label>Выберите дату</label>
+        <label>Дата</label>
         <input type="date" min="${todayStr()}" max="${addDaysStr(db.settings.horizonDays)}" value="${state.selectedDate}" onchange="state.selectedDate=this.value;state.selectedSlot=null;render()">
         <label style="margin-top:12px">Свободные слоты (${totalDur} мин)</label>
         ${slots.length ? `
           <div class="slots-grid">
             ${slots.map(t => `<button class="slot-btn ${state.selectedSlot===t?'selected':''}" onclick="state.selectedSlot='${t}';haptic();render()">${t}</button>`).join('')}
           </div>
-        ` : `<div class="comment-box">На эту дату свободных окон нет. Выберите другой день.</div>`}
+        ` : `<div class="comment-box">На выбранную дату свободных окон нет</div>`}
       </div>
       ${state.selectedSlot ? `<button class="btn btn-primary btn-full" onclick="state.bookingStep=3;haptic();render()">Продолжить на ${state.selectedSlot} →</button>` : ''}
     `;
@@ -1009,16 +587,13 @@ function renderClientBooking() {
         <div style="font-weight:700;font-size:16px;margin:6px 0">${state.selectedDate} в ${state.selectedSlot} (${db.settings.timezoneLabel})</div>
         <div class="muted">${selectedSvcs.map(s=>s.title).join(', ')} • <b>${fmtRub(totalPrice)}</b></div>
         <label>Ваше имя</label>
-        <input id="cb_name" value="${client.name || state.bookingName}">
-        <label>Телефон</label>
-        <div class="row">
-          <input id="cb_phone" placeholder="+7 999 000-00-00" value="${client.phone || state.bookingPhone}">
-          <button class="btn btn-soft btn-sm" style="white-space:nowrap" onclick="requestTgPhone()">Из TG</button>
-        </div>
-        <label>Комментарий (необязательно)</label>
+        <input id="cb_name" value="${state.bookingName}" placeholder="Как к вам обращаться">
+        <label>Телефон или @username</label>
+        <input id="cb_phone" value="${state.bookingPhone}" placeholder="+7 999 000-00-00 или @username">
+        <label>Комментарий</label>
         <textarea id="cb_comment" placeholder="Пожелания к визиту">${state.bookingComment}</textarea>
       </div>
-      <button class="btn btn-primary btn-full" onclick="submitClientBooking()">Записаться на ${state.selectedDate.slice(5)}, ${state.selectedSlot}</button>
+      <button class="btn btn-primary btn-full" onclick="submitClientBooking()">Подтвердить запись</button>
     `;
   }
 }
@@ -1030,39 +605,31 @@ function toggleSelectService(id) {
   render();
 }
 
-function requestTgPhone() {
-  if (tg?.requestContact) {
-    tg.requestContact((ok) => toast(ok ? 'Контакт отправлен боту' : 'Отменено'));
-  } else {
-    toast('Доступно внутри Telegram');
-  }
-}
-
 async function submitClientBooking() {
   const name = document.getElementById('cb_name').value.trim();
   const phone = document.getElementById('cb_phone').value.trim();
   const comment = document.getElementById('cb_comment').value.trim();
-  if (!name || !phone) return toast('Укажите имя и телефон');
+  if (!name || !phone) return toast('Укажите имя и контакт');
 
-  const client = getCurrentClient();
-  client.name = name;
-  client.phone = phone;
+  state.bookingName = name;
+  state.bookingPhone = phone;
+  state.bookingComment = comment;
 
-  const svcs = db.services.filter(s => state.selectedServiceIds.includes(s.id));
-  const totalDur = svcs.reduce((s, x) => s + x.duration, 0);
-  const totalPrice = svcs.reduce((s, x) => s + x.price, 0);
+  const svcs = db.services.filter(s => s.active && state.selectedServiceIds.includes(s.id));
+  const totalDur = svcs.reduce((s, x) => s + Number(x.duration || 60), 0);
+  const totalPrice = svcs.reduce((s, x) => s + Number(x.price || 0), 0);
 
   const appt = {
     id: uid(),
-    clientId: client.id,
+    clientKey: getClientKey(),
     clientName: name,
     clientPhone: phone,
-    telegramId: client.telegramId || '',
-    username: client.username || '',
+    telegramId: tgUser?.id || '',
+    username: tgUser?.username || '',
     date: state.selectedDate,
     time: state.selectedSlot,
     duration: totalDur,
-    buffer: db.settings.bufferMin,
+    buffer: Number(db.settings.bufferMin) || 0,
     totalPrice,
     status: db.settings.autoConfirm ? 'confirmed' : 'pending',
     comment,
@@ -1072,21 +639,25 @@ async function submitClientBooking() {
   db.appointments.push(appt);
   saveDB();
   haptic('medium');
-  toast('Вы успешно записаны!');
+  toast('Запись оформлена');
   state.selectedServiceIds = [];
+  state.selectedSlot = null;
+  state.bookingComment = '';
   state.bookingStep = 1;
   state.clientTab = 'my';
   render();
   await apiPost({ action: 'create_appointment', appointment: appt });
 }
 
-/* ===================== CLIENT: MY BOOKINGS ===================== */
 function renderClientMyBookings() {
-  const client = getCurrentClient();
-  const all = db.appointments.filter(a => a.clientId === client.id).sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
+  const myKey = getClientKey();
+  const mine = db.appointments
+    .filter(a => String(a.clientKey || a.telegramId || '') === String(myKey))
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+
   const list = state.myTab === 'upcoming'
-    ? all.filter(a => ['pending', 'confirmed'].includes(a.status))
-    : all.filter(a => !['pending', 'confirmed'].includes(a.status));
+    ? mine.filter(a => ['pending', 'confirmed'].includes(a.status))
+    : mine.filter(a => !['pending', 'confirmed'].includes(a.status));
 
   let html = `
     <div class="segments">
@@ -1102,25 +673,25 @@ function renderClientMyBookings() {
   list.forEach(a => {
     const visitDt = new Date(`${a.date}T${a.time}:00`);
     const hoursLeft = (visitDt - new Date()) / 3600000;
-    const canCancel = hoursLeft >= db.settings.cancelLimitHours;
+    const canCancel = hoursLeft >= Number(db.settings.cancelLimitHours || 0);
 
     html += `
       <div class="card">
         <div class="row">
           <div>
             <div style="font-weight:700">${a.date} в ${a.time}</div>
-            <div class="muted">${a.services.map(s=>s.title).join(', ')}</div>
+            <div class="muted">${(a.services || []).map(s => s.title).join(', ')}</div>
           </div>
           <div style="text-align:right">
             <div class="price">${fmtRub(a.totalPrice)}</div>
-            <span class="badge b-${a.status}">${STATUS_LABEL[a.status]}</span>
+            <span class="badge b-${a.status}">${STATUS_LABEL[a.status] || a.status}</span>
           </div>
         </div>
         ${state.myTab === 'upcoming' ? `
           <div class="row" style="margin-top:10px">
             ${canCancel
-              ? `<button class="btn btn-danger btn-sm" style="flex:1" onclick="setApptStatus('${a.id}','cancelled')">Отменить запись</button>`
-              : `<a class="btn btn-soft btn-sm" style="flex:1;text-decoration:none" href="https://t.me/${db.settings.masterTelegram}" target="_blank">Написать мастеру (менее ${db.settings.cancelLimitHours}ч)</a>`
+              ? `<button class="btn btn-danger btn-sm" style="flex:1" onclick="changeStatus('${a.id}','cancelled')">Отменить запись</button>`
+              : `<a class="btn btn-soft btn-sm" style="flex:1" href="https://t.me/${db.settings.masterTelegram}" target="_blank">Написать мастеру</a>`
             }
           </div>
         ` : ''}
@@ -1131,7 +702,6 @@ function renderClientMyBookings() {
   document.getElementById('app').innerHTML = html;
 }
 
-/* ===================== MODAL UTILS ===================== */
 function openModal(html) {
   document.getElementById('modalContent').innerHTML = html;
   document.getElementById('modalBackdrop').classList.add('open');
