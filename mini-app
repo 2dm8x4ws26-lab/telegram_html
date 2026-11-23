@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Онлайн-запись</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: var(--tg-theme-bg-color, #fff);
+      color: var(--tg-theme-text-color, #111);
+    }
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 13px; margin-bottom: 6px; opacity: 0.8; }
+    select, input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      font-size: 15px;
+      background: var(--tg-theme-secondary-bg-color, #f6f7f9);
+      color: var(--tg-theme-text-color, #111);
+    }
+    .slots {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .slot {
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .slot.active {
+      background: var(--tg-theme-button-color, #2481cc);
+      color: var(--tg-theme-button-text-color, #fff);
+      border-color: transparent;
+    }
+    .slot:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .submit {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--tg-theme-button-color, #2481cc);
+      color: var(--tg-theme-button-text-color, #fff);
+    }
+    .msg { margin-top: 12px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h2>Онлайн-запись</h2>
+
+  <div class="field">
+    <label>Услуга</label>
+    <select id="service"></select>
+  </div>
+
+  <div class="field">
+    <label>Дата</label>
+    <input type="date" id="date" />
+  </div>
+
+  <div class="field">
+    <label>Свободное время</label>
+    <div id="slots" class="slots"></div>
+  </div>
+
+  <div class="field">
+    <label>Ваше имя</label>
+    <input type="text" id="name" placeholder="Например, Алексей" />
+  </div>
+
+  <div class="field">
+    <label>Телефон или @username</label>
+    <input type="text" id="contact" placeholder="@username или +7..." />
+  </div>
+
+  <button class="submit" id="submitBtn">Записаться</button>
+  <div class="msg" id="msg"></div>
+
+  <script>
+    const API_URL = 'ВСТАВЬ_СЮДА_URL_ВЕБ_ПРИЛОЖЕНИЯ_APPS_SCRIPT';
+    const tg = window.Telegram && window.Telegram.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
+      if (user) {
+        document.getElementById('name').value = [user.first_name, user.last_name].filter(Boolean).join(' ');
+        if (user.username) document.getElementById('contact').value = '@' + user.username;
+      }
+    }
+
+    let state = { services: [], schedule: [], bookings: [], selectedTime: '' };
+
+    const dateInput = document.getElementById('date');
+    const today = new Date().toISOString().slice(0, 10);
+    dateInput.value = today;
+    dateInput.min = today;
+
+    async function loadData() {
+      document.getElementById('msg').textContent = 'Загружаем расписание...';
+      const res = await fetch(`${API_URL}?action=init`);
+      const data = await res.json();
+      state.services = data.services || [];
+      state.schedule = data.schedule || [];
+      state.bookings = data.bookings || [];
+
+      const select = document.getElementById('service');
+      select.innerHTML = state.services.map(s =>
+        `<option value="${s.name}" data-price="${s.price}">${s.name} — ${s.price} ₽ (${s.duration} мин)</option>`
+      ).join('');
+
+      document.getElementById('msg').textContent = '';
+      renderSlots();
+    }
+
+    function getSlotsForDate(dateStr) {
+      if (!dateStr) return [];
+      const d = new Date(dateStr + 'T00:00:00');
+      // 1 = Пн ... 7 = Вс
+      const jsDay = d.getDay();
+      const dayNum = jsDay === 0 ? 7 : jsDay;
+      const dayNames = { 1: 'пн', 2: 'вт', 3: 'ср', 4: 'чт', 5: 'пт', 6: 'сб', 7: 'вс' };
+
+      const rule = state.schedule.find(r => {
+        const val = String(r.day).trim().toLowerCase();
+        return val === String(dayNum) || val === dayNames[dayNum];
+      });
+
+      if (!rule || rule.dayOff) return [];
+
+      const [sh, sm] = String(rule.start).split(':').map(Number);
+      const [eh, em] = String(rule.end).split(':').map(Number);
+      const step = Number(rule.step) || 60;
+
+      let cur = sh * 60 + sm;
+      const end = eh * 60 + em;
+      const slots = [];
+
+      while (cur + step <= end) {
+        const hh = String(Math.floor(cur / 60)).padStart(2, '0');
+        const mm = String(cur % 60).padStart(2, '0');
+        slots.push(`${hh}:${mm}`);
+        cur += step;
+      }
+      return slots;
+    }
+
+    function renderSlots() {
+      const dateStr = dateInput.value;
+      const allSlots = getSlotsForDate(dateStr);
+      const busy = new Set(
+        state.bookings.filter(b => b.date === dateStr).map(b => b.time)
+      );
+      state.selectedTime = '';
+
+      const container = document.getElementById('slots');
+      if (!allSlots.length) {
+        container.innerHTML = '<div style="grid-column: 1 / -1; opacity: 0.7;">В этот день записи нет</div>';
+        return;
+      }
+
+      container.innerHTML = allSlots.map(time => {
+        const isBusy = busy.has(time);
+        return `<button type="button" class="slot" ${isBusy ? 'disabled' : ''} data-time="${time}">${time}</button>`;
+      }).join('');
+
+      container.querySelectorAll('.slot:not(:disabled)').forEach(btn => {
+        btn.addEventListener('click', () => {
+          container.querySelectorAll('.slot').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.selectedTime = btn.dataset.time;
+        });
+      });
+    }
+
+    dateInput.addEventListener('change', renderSlots);
+
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+      const select = document.getElementById('service');
+      const opt = select.options[select.selectedIndex];
+      const name = document.getElementById('name').value.trim();
+      const contact = document.getElementById('contact').value.trim();
+      const msgEl = document.getElementById('msg');
+
+      if (!opt || !dateInput.value || !state.selectedTime || !name) {
+        msgEl.textContent = 'Выберите услугу, дату, время и укажите имя.';
+        return;
+      }
+
+      const payload = {
+        action: 'book',
+        service: opt.value,
+        price: opt.dataset.price || '',
+        date: dateInput.value,
+        time: state.selectedTime,
+        name,
+        contact
+      };
+
+      msgEl.textContent = 'Отправляем заявку...';
+      try {
+        const res = await fetch(API_URL, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.ok) {
+          msgEl.textContent = 'Запись подтверждена!';
+          state.bookings.push({ date: payload.date, time: payload.time });
+          renderSlots();
+        } else {
+          msgEl.textContent = result.error || 'Не удалось записаться.';
+        }
+      } catch (e) {
+        msgEl.textContent = 'Ошибка соединения.';
+      }
+    });
+
+    loadData();
+  </script>
+</body>
+</html>
