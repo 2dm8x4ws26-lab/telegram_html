@@ -182,8 +182,7 @@
 
 <script>
 /* ===================== НАСТРОЙКИ ЗАПУСКА ===================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbxNqGFVN8S1_EOSjoQZ5bL8Yb-B_Awb1BFhhmnIFVattOE5QsuOsOEsIo3H2I-swoxx/exec'; // Вставь URL веб-приложения Google Apps Script (.../exec)
-const OWNER_TELEGRAM_ID = null; // Например, 123456789 — ID владельца для автоматического входа в админку
+const API_URL = 'https://script.google.com/macros/s/AKfycbxNqGFVN8S1_EOSjoQZ5bL8Yb-B_Awb1BFhhmnIFVattOE5QsuOsOEsIo3H2I-swoxx/exec';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -191,12 +190,9 @@ if (tg) {
   tg.expand();
 }
 
-const urlParams = new URLSearchParams(window.location.search);
 const tgUser = tg?.initDataUnsafe?.user || null;
-const isOwner = Boolean(
-  (OWNER_TELEGRAM_ID && tgUser?.id && Number(tgUser.id) === Number(OWNER_TELEGRAM_ID)) ||
-  urlParams.get('admin') === '1'
-);
+const tgId = tgUser?.id ? String(tgUser.id) : '';
+let isAdminUser = false;
 
 function haptic(type = 'light') {
   try { tg?.HapticFeedback?.impactOccurred(type); } catch {}
@@ -254,7 +250,7 @@ let db = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || structuredCl
 function saveDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
 
 const state = {
-  role: isOwner ? 'admin' : 'client',
+  role: 'client',
   clientTab: 'book',
   scheduleFilter: 'today',
   scheduleDate: todayStr(),
@@ -283,7 +279,7 @@ async function apiPost(payload) {
   try {
     const res = await fetch(API_URL, {
       method: 'POST',
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ ...payload, tgId })
     });
     return await res.json();
   } catch (err) {
@@ -299,9 +295,13 @@ async function syncFromSheets(showNotice = false) {
     return;
   }
   try {
-    const res = await fetch(`${API_URL}?action=sync`);
+    const url = `${API_URL}?action=sync&tgId=${encodeURIComponent(tgId)}`;
+    const res = await fetch(url);
     const data = await res.json();
     if (!data.ok) return;
+
+    isAdminUser = Boolean(data.isAdmin);
+    state.role = isAdminUser ? 'admin' : 'client';
 
     if (Array.isArray(data.services) && data.services.length) {
       db.services = data.services;
@@ -373,7 +373,7 @@ function getFreeSlots(dateStr, durationMin) {
 }
 
 function toggleRole() {
-  if (!isOwner) return;
+  if (!isAdminUser) return;
   haptic('medium');
   state.role = state.role === 'admin' ? 'client' : 'admin';
   state.bookingStep = 1;
@@ -381,11 +381,11 @@ function toggleRole() {
 }
 
 function render() {
-  const showAdmin = isOwner && state.role === 'admin';
+  const showAdmin = isAdminUser && state.role === 'admin';
   const roleBtn = document.getElementById('roleToggleBtn');
   const blockBtn = document.getElementById('topActionBtn');
 
-  roleBtn.style.display = isOwner ? 'inline-flex' : 'none';
+  roleBtn.style.display = isAdminUser ? 'inline-flex' : 'none';
   roleBtn.textContent = showAdmin ? 'Как клиент' : 'В админку';
   blockBtn.style.display = showAdmin ? 'inline-flex' : 'none';
 
