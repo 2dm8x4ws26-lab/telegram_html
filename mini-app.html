@@ -213,13 +213,47 @@ const toMin = (hhmm) => { const [h, m] = String(hhmm || '00:00').split(':').map(
 const fromMin = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-const STATUS_LABEL = {
-  pending: 'Ожидает',
-  confirmed: 'Запланировано',
-  completed: 'Выполнено',
-  cancelled: 'Отменено',
-  no_show: 'Не пришёл'
+/* ===================== СТАТУСЫ (РУС + СОВМЕСТИМОСТЬ С АНГЛ) ===================== */
+const STATUS = {
+  PENDING: 'Ожидает',
+  CONFIRMED: 'Подтверждена',
+  COMPLETED: 'Завершена',
+  CANCELLED: 'Отменена',
+  NO_SHOW: 'Не пришёл'
 };
+
+const STATUS_META = {
+  [STATUS.PENDING]:   { label: 'Ожидает',      badge: 'b-pending' },
+  [STATUS.CONFIRMED]: { label: 'Подтверждена', badge: 'b-confirmed' },
+  [STATUS.COMPLETED]: { label: 'Завершена',    badge: 'b-completed' },
+  [STATUS.CANCELLED]: { label: 'Отменена',     badge: 'b-cancelled' },
+  [STATUS.NO_SHOW]:   { label: 'Не пришёл',    badge: 'b-no_show' }
+};
+
+function normalizeStatus(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (s === 'pending' || s === 'ожидает') return STATUS.PENDING;
+  if (s === 'confirmed' || s === 'подтверждена' || s === 'запланировано') return STATUS.CONFIRMED;
+  if (s === 'completed' || s === 'завершена' || s === 'выполнено') return STATUS.COMPLETED;
+  if (s === 'cancelled' || s === 'canceled' || s === 'отменена' || s === 'отменено') return STATUS.CANCELLED;
+  if (s === 'no_show' || s === 'не пришёл' || s === 'не пришел') return STATUS.NO_SHOW;
+  return raw ? String(raw).trim() : STATUS.CONFIRMED;
+}
+
+function getStatusMeta(status) {
+  const norm = normalizeStatus(status);
+  return STATUS_META[norm] || { label: norm, badge: 'b-confirmed' };
+}
+
+function isActiveStatus(status) {
+  const norm = normalizeStatus(status);
+  return norm === STATUS.PENDING || norm === STATUS.CONFIRMED;
+}
+
+function isCancelledStatus(status) {
+  const norm = normalizeStatus(status);
+  return norm === STATUS.CANCELLED || norm === STATUS.NO_SHOW;
+}
 
 const STORAGE_KEY = 'tma_booking_v2';
 const DEFAULT_DB = {
@@ -239,14 +273,17 @@ const DEFAULT_DB = {
     address: 'Уточняется при записи'
   },
   services: [
-    { id: 's1', category: 'Основные', title: 'Базовая услуга', price: 2000, duration: 60, active: true },
-    { id: 's2', category: 'Основные', title: 'Расширенная услуга', price: 3500, duration: 90, active: true }
+    { id: 's1', category: 'Основные', title: 'Мужская стрижка', price: 2200, duration: 60, active: true },
+    { id: 's2', category: 'Комплексы', title: 'Комплекс «Стрижка + Борода»', price: 3400, duration: 90, active: true }
   ],
   appointments: [],
   blockedSlots: []
 };
 
 let db = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || structuredClone(DEFAULT_DB);
+if (Array.isArray(db.appointments)) {
+  db.appointments = db.appointments.map(a => ({ ...a, status: normalizeStatus(a.status) }));
+}
 function saveDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
 
 const state = {
@@ -329,7 +366,10 @@ async function syncFromSheets(showNotice = false) {
       };
     }
     if (Array.isArray(data.appointments)) {
-      db.appointments = data.appointments;
+      db.appointments = data.appointments.map(a => ({
+        ...a,
+        status: normalizeStatus(a.status)
+      }));
     }
     saveDB();
     render();
@@ -349,7 +389,7 @@ function getFreeSlots(dateStr, durationMin) {
   const buf = Number(s.bufferMin) || 0;
 
   const busy = db.appointments
-    .filter(a => a.date === dateStr && ['pending', 'confirmed'].includes(a.status))
+    .filter(a => a.date === dateStr && isActiveStatus(a.status))
     .map(a => ({ start: toMin(a.time), end: toMin(a.time) + Number(a.duration || 60) + Number(a.buffer || 0) }));
 
   db.blockedSlots
@@ -425,7 +465,7 @@ function renderAdminView() {
   list.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
   const sum = list
-    .filter(a => !['cancelled', 'no_show'].includes(a.status))
+    .filter(a => !isCancelledStatus(a.status))
     .reduce((acc, a) => acc + Number(a.totalPrice || 0), 0);
 
   let html = `
@@ -459,6 +499,8 @@ function renderAdminView() {
   }
 
   list.forEach(a => {
+    const normStatus = normalizeStatus(a.status);
+    const meta = getStatusMeta(normStatus);
     const svcNames = (a.services || []).map(s => s.title).join(', ') || 'Услуга';
     html += `
       <div class="card">
@@ -474,14 +516,15 @@ function renderAdminView() {
           </div>
           <div style="text-align:right">
             <div class="price">${fmtRub(a.totalPrice)}</div>
-            <span class="badge b-${a.status}">${STATUS_LABEL[a.status] || a.status}</span>
+            <span class="badge ${meta.badge}">${meta.label}</span>
           </div>
         </div>
         ${a.comment ? `<div class="comment-box">${a.comment}</div>` : ''}
         <div class="row-wrap" style="margin-top:10px">
-          ${a.status !== 'completed' ? `<button class="btn btn-success btn-sm" style="flex:1" onclick="changeStatus('${a.id}','completed')">Выполнено</button>` : ''}
-          ${a.status !== 'no_show' ? `<button class="btn btn-warn btn-sm" onclick="changeStatus('${a.id}','no_show')">Не пришёл</button>` : ''}
-          ${a.status !== 'cancelled' ? `<button class="btn btn-danger btn-sm" onclick="changeStatus('${a.id}','cancelled')">Отменить</button>` : ''}
+          ${normStatus === STATUS.PENDING ? `<button class="btn btn-primary btn-sm" style="flex:1" onclick="changeStatus('${a.id}','${STATUS.CONFIRMED}')">Подтвердить</button>` : ''}
+          ${normStatus !== STATUS.COMPLETED ? `<button class="btn btn-success btn-sm" style="flex:1" onclick="changeStatus('${a.id}','${STATUS.COMPLETED}')">Завершена</button>` : ''}
+          ${normStatus !== STATUS.NO_SHOW ? `<button class="btn btn-warn btn-sm" onclick="changeStatus('${a.id}','${STATUS.NO_SHOW}')">Не пришёл</button>` : ''}
+          ${normStatus !== STATUS.CANCELLED ? `<button class="btn btn-danger btn-sm" onclick="changeStatus('${a.id}','${STATUS.CANCELLED}')">Отменить</button>` : ''}
         </div>
       </div>
     `;
@@ -493,12 +536,13 @@ function renderAdminView() {
 async function changeStatus(id, status) {
   const appt = db.appointments.find(x => String(x.id) === String(id));
   if (!appt) return;
-  appt.status = status;
+  const norm = normalizeStatus(status);
+  appt.status = norm;
   saveDB();
   haptic('medium');
-  toast(`Статус: ${STATUS_LABEL[status]}`);
+  toast(`Статус: ${getStatusMeta(norm).label}`);
   render();
-  await apiPost({ action: 'update_status', id, status });
+  await apiPost({ action: 'update_status', id, status: norm });
 }
 
 function openBlockSlotModal() {
@@ -631,7 +675,7 @@ async function submitClientBooking() {
     duration: totalDur,
     buffer: Number(db.settings.bufferMin) || 0,
     totalPrice,
-    status: db.settings.autoConfirm ? 'confirmed' : 'pending',
+    status: db.settings.autoConfirm ? STATUS.CONFIRMED : STATUS.PENDING,
     comment,
     services: svcs.map(s => ({ id: s.id, title: s.title, price: s.price, duration: s.duration }))
   };
@@ -656,8 +700,8 @@ function renderClientMyBookings() {
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
   const list = state.myTab === 'upcoming'
-    ? mine.filter(a => ['pending', 'confirmed'].includes(a.status))
-    : mine.filter(a => !['pending', 'confirmed'].includes(a.status));
+    ? mine.filter(a => isActiveStatus(a.status))
+    : mine.filter(a => !isActiveStatus(a.status));
 
   let html = `
     <div class="segments">
@@ -671,6 +715,7 @@ function renderClientMyBookings() {
   }
 
   list.forEach(a => {
+    const meta = getStatusMeta(a.status);
     const visitDt = new Date(`${a.date}T${a.time}:00`);
     const hoursLeft = (visitDt - new Date()) / 3600000;
     const canCancel = hoursLeft >= Number(db.settings.cancelLimitHours || 0);
@@ -684,13 +729,13 @@ function renderClientMyBookings() {
           </div>
           <div style="text-align:right">
             <div class="price">${fmtRub(a.totalPrice)}</div>
-            <span class="badge b-${a.status}">${STATUS_LABEL[a.status] || a.status}</span>
+            <span class="badge ${meta.badge}">${meta.label}</span>
           </div>
         </div>
         ${state.myTab === 'upcoming' ? `
           <div class="row" style="margin-top:10px">
             ${canCancel
-              ? `<button class="btn btn-danger btn-sm" style="flex:1" onclick="changeStatus('${a.id}','cancelled')">Отменить запись</button>`
+              ? `<button class="btn btn-danger btn-sm" style="flex:1" onclick="changeStatus('${a.id}','${STATUS.CANCELLED}')">Отменить запись</button>`
               : `<a class="btn btn-soft btn-sm" style="flex:1" href="https://t.me/${db.settings.masterTelegram}" target="_blank">Написать мастеру</a>`
             }
           </div>
